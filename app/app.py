@@ -8,8 +8,8 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
-from app.data.loader import load_workbook_bytes, load_workbook_path
-from app.data.transforms import (
+from .data.loader import load_workbook_bytes, load_workbook_path
+from .data.transforms import (
     clean_players,
     clean_proxies,
     derive_hierarchy,
