@@ -40,15 +40,20 @@ def postprocess(wb: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
 
 def main() -> None:
     st.sidebar.header("Dataset")
-    uploaded = st.sidebar.file_uploader("Upload workbook (.xlsx)", type=["xlsx"])
+
+    DEFAULT_PATH = "data/a_d_database.xlsx"
+    uploaded = st.sidebar.file_uploader(
+        "Optional: upload a different workbook",
+        type=["xlsx"],
+    )
 
     if uploaded is not None:
         wb = load_all_from_bytes(uploaded.read())
         label = f"Uploaded: {uploaded.name}"
     else:
-        path = st.sidebar.text_input("Or local path", value="data/a_d_database.xlsx")
-        wb = load_all_from_path(path)
-        label = f"Local: {path}"
+        wb = load_all_from_path(DEFAULT_PATH)
+        label = f"Default dataset: {DEFAULT_PATH}"
+
 
     wb = postprocess(wb)
     nodes = wb["Nodes"]
