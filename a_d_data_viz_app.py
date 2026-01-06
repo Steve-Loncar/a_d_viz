@@ -131,22 +131,22 @@ def main() -> None:
     fin = str(node.get("financial_commentary", "") or "").strip()
     method = str(node.get("methodology_summary", "") or "").strip()
 
-        if scope:
-            st.text_area("Scope", value=scope, height=180, disabled=True)
-        if fin:
-            st.text_area(
-                "Financial commentary",
-                value=fin,
-                height=180,
-                disabled=True,
-            )
-        if method:
-            st.text_area(
-                "Methodology",
-                value=method,
-                height=180,
-                disabled=True,
-            )
+    if scope:
+        st.text_area("Scope", value=scope, height=180, disabled=True)
+    if fin:
+        st.text_area(
+            "Financial commentary",
+            value=fin,
+            height=180,
+            disabled=True,
+        )
+    if method:
+        st.text_area(
+            "Methodology",
+            value=method,
+            height=180,
+            disabled=True,
+        )
 
     with tab2:
         st.subheader(node.get("display_name", ""))
