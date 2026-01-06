@@ -6,7 +6,7 @@ import streamlit as st
 import plotly.express as px
 
 from lib.loader import load_workbook_bytes, load_workbook_path
-from lib.transforms import derive_hierarchy, make_series_long, safe_num, clean_players, clean_proxies
+from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_proxies
 
 st.set_page_config(page_title="A&D Market Explorer (v2)", layout="wide")
 
@@ -30,35 +30,51 @@ def postprocess(wb: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     nodes = derive_hierarchy(nodes)
     players = clean_players(players)
     proxies = clean_proxies(proxies)
-    series_long = make_series_long(nodes)
 
     wb_out = dict(wb)
     wb_out["Nodes"] = nodes
     wb_out["Players"] = players
     wb_out["Proxies"] = proxies
-    wb_out["SeriesLong"] = series_long
     return wb_out
 
 def main() -> None:
     st.sidebar.header("Dataset")
 
-    DEFAULT_PATH = "data/a_d_database.xlsx"
-    uploaded = st.sidebar.file_uploader(
-        "Optional: upload a different workbook",
-        type=["xlsx"],
-    )
+        YEARS = list(range(15, 26))  # fy15 → fy25
 
-    if uploaded is not None:
-        wb = load_all_from_bytes(uploaded.read())
-        label = f"Uploaded: {uploaded.name}"
-    else:
-        wb = load_all_from_path(DEFAULT_PATH)
-        label = f"Default dataset: {DEFAULT_PATH}"
+        metric = st.radio(
+            "Metric",
+            ["Revenue", "EBITDA", "EBITDA Margin"],
+            horizontal=True,
+        )
 
+        if metric == "Revenue":
+            cols = [f"segment_fy{y}_revenue_usd_bn" for y in YEARS]
+            y_label = "Revenue (USD bn)"
+        elif metric == "EBITDA":
+            cols = [f"segment_fy{y}_ebitda_usd_bn" for y in YEARS]
+            y_label = "EBITDA (USD bn)"
+        else:
+            cols = [f"segment_fy{y}_ebitda_margin_pct" for y in YEARS]
+            y_label = "EBITDA Margin (%)"
 
-    wb = postprocess(wb)
-    nodes = wb["Nodes"]
-    series_long = wb["SeriesLong"]
+        data = {
+            "Fiscal Year": [2000 + y for y in YEARS],
+            "Value": [safe_num(node.get(c)) for c in cols],
+        }
+
+        df = pd.DataFrame(data)
+
+        fig = px.line(
+            df,
+            x="Fiscal Year",
+            y="Value",
+            markers=True,
+            title=y_label,
+        )
+        fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+
+        st.plotly_chart(fig, use_container_width=True)
 
     st.title("A&D Market Explorer (v2)")
     st.caption(label)
@@ -67,7 +83,6 @@ def main() -> None:
     q = st.sidebar.text_input("Search node", value="")
     nodes_view = nodes
     if q.strip():
-        nodes_view = nodes[nodes["display_name"].astype(str).str.contains(q, case=False, na=False)]
 
     if nodes_view.empty:
         st.sidebar.warning("No nodes match your search.")
@@ -108,30 +123,8 @@ def main() -> None:
     with tab2:
         st.subheader(node.get("display_name", ""))
         kpis()
-        if series_long is None or series_long.empty or "node_id" not in series_long.columns:
-            st.info("No time series available for this node yet.")
-            return
-
-        with st.expander("Diagnostics", expanded=False):
-            st.write("Nodes columns:", list(nodes.columns))
-            st.write("SeriesLong columns:", list(series_long.columns))
-            st.write("SeriesLong rows:", len(series_long))
-
-        if series_long is None or series_long.empty or "node_id" not in series_long.columns:
-            st.warning("No time series available yet (SeriesLong missing expected columns).")
-            st.stop()
-
-        df = series_long[series_long["node_id"].astype(str) == str(node_id)].copy()
-
-        if df.empty:
-            st.info("No time series found for this node.")
-            return
-        metric = st.radio("Metric", ["revenue", "ebitda", "margin"], horizontal=True)
-        dff = df[df["metric_type"] == metric]
-        title = {"revenue": "Revenue (USD bn)", "ebitda": "EBITDA (USD bn)", "margin": "EBITDA Margin (%)"}[metric]
-        fig = px.line(dff, x="fiscal_year", y="value", markers=True, title=title)
-        fig.update_layout(margin=dict(l=10, r=10, t=50, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+        st.info("No time series available for this node yet.")
+        return
 
 if __name__ == "__main__":
     main()
