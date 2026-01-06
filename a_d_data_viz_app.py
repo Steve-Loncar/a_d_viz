@@ -112,7 +112,17 @@ def main() -> None:
             st.info("No time series available for this node yet.")
             return
 
-        df = series_long[series_long["node_id"] == node_id].copy()
+        with st.expander("Diagnostics", expanded=False):
+            st.write("Nodes columns:", list(nodes.columns))
+            st.write("SeriesLong columns:", list(series_long.columns))
+            st.write("SeriesLong rows:", len(series_long))
+
+        if series_long is None or series_long.empty or "node_id" not in series_long.columns:
+            st.warning("No time series available yet (SeriesLong missing expected columns).")
+            st.stop()
+
+        df = series_long[series_long["node_id"].astype(str) == str(node_id)].copy()
+
         if df.empty:
             st.info("No time series found for this node.")
             return
