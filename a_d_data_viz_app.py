@@ -40,42 +40,6 @@ def postprocess(wb: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
 def main() -> None:
     st.sidebar.header("Dataset")
 
-        YEARS = list(range(15, 26))  # fy15 → fy25
-
-        metric = st.radio(
-            "Metric",
-            ["Revenue", "EBITDA", "EBITDA Margin"],
-            horizontal=True,
-        )
-
-        if metric == "Revenue":
-            cols = [f"segment_fy{y}_revenue_usd_bn" for y in YEARS]
-            y_label = "Revenue (USD bn)"
-        elif metric == "EBITDA":
-            cols = [f"segment_fy{y}_ebitda_usd_bn" for y in YEARS]
-            y_label = "EBITDA (USD bn)"
-        else:
-            cols = [f"segment_fy{y}_ebitda_margin_pct" for y in YEARS]
-            y_label = "EBITDA Margin (%)"
-
-        data = {
-            "Fiscal Year": [2000 + y for y in YEARS],
-            "Value": [safe_num(node.get(c)) for c in cols],
-        }
-
-        df = pd.DataFrame(data)
-
-        fig = px.line(
-            df,
-            x="Fiscal Year",
-            y="Value",
-            markers=True,
-            title=y_label,
-        )
-        fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
-
-        st.plotly_chart(fig, use_container_width=True)
-
     st.title("A&D Market Explorer (v2)")
     st.caption(label)
 
@@ -123,8 +87,41 @@ def main() -> None:
     with tab2:
         st.subheader(node.get("display_name", ""))
         kpis()
-        st.info("No time series available for this node yet.")
-        return
+        YEARS = list(range(15, 26))  # fy15 → fy25
+
+        metric = st.radio(
+            "Metric",
+            ["Revenue", "EBITDA", "EBITDA Margin"],
+            horizontal=True,
+        )
+
+        if metric == "Revenue":
+            cols = [f"segment_fy{y}_revenue_usd_bn" for y in YEARS]
+            y_label = "Revenue (USD bn)"
+        elif metric == "EBITDA":
+            cols = [f"segment_fy{y}_ebitda_usd_bn" for y in YEARS]
+            y_label = "EBITDA (USD bn)"
+        else:
+            cols = [f"segment_fy{y}_ebitda_margin_pct" for y in YEARS]
+            y_label = "EBITDA Margin (%)"
+
+        data = {
+            "Fiscal Year": [2000 + y for y in YEARS],
+            "Value": [safe_num(node.get(c)) for c in cols],
+        }
+
+        df = pd.DataFrame(data)
+
+        fig = px.line(
+            df,
+            x="Fiscal Year",
+            y="Value",
+            markers=True,
+            title=y_label,
+        )
+        fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+
+        st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
     main()
