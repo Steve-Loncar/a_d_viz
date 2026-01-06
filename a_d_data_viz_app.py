@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import numpy as np
 import streamlit as st
 import plotly.express as px
 
@@ -96,19 +97,21 @@ def main() -> None:
         scope = str(node.get("scope_context", "") or "").strip()
         fin = str(node.get("financial_commentary", "") or "").strip()
         method = str(node.get("methodology_summary", "") or "").strip()
+        # Use text areas to avoid markdown interpretation (italics, underscores, etc.)
         if scope:
-            st.markdown("**Scope**")
-            st.write(scope)
+            st.text_area("Scope", value=scope, height=180, disabled=True)
         if fin:
-            st.markdown("**Financial commentary**")
-            st.write(fin)
+            st.text_area("Financial commentary", value=fin, height=180, disabled=True)
         if method:
-            st.markdown("**Methodology**")
-            st.write(method)
+            st.text_area("Methodology", value=method, height=180, disabled=True)
 
     with tab2:
         st.subheader(node.get("display_name", ""))
         kpis()
+        if series_long is None or series_long.empty or "node_id" not in series_long.columns:
+            st.info("No time series available for this node yet.")
+            return
+
         df = series_long[series_long["node_id"] == node_id].copy()
         if df.empty:
             st.info("No time series found for this node.")
