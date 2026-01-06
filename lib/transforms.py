@@ -64,8 +64,9 @@ def clean_proxies(proxies: pd.DataFrame) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 def make_series_long(nodes: pd.DataFrame) -> pd.DataFrame:
+    expected_cols = ["node_id", "path", "display_name", "metric_type", "fiscal_year", "value"]
     if nodes is None or nodes.empty:
-        return pd.DataFrame(columns=["node_id", "path", "display_name", "metric_type", "fiscal_year", "value"])
+        return pd.DataFrame(columns=expected_cols)
 
     base_cols = [c for c in ["node_id", "path", "display_name"] if c in nodes.columns]
     rows = []
@@ -85,7 +86,10 @@ def make_series_long(nodes: pd.DataFrame) -> pd.DataFrame:
             tmp = tmp.drop(columns=[col])
             rows.append(tmp)
 
-    out = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+    if not rows:
+        return pd.DataFrame(columns=expected_cols)
+
+    out = pd.concat(rows, ignore_index=True)
     if not out.empty:
         out["node_id"] = out["node_id"].astype(str)
         out["path"] = out["path"].astype(str)
