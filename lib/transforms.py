@@ -76,30 +76,7 @@ def make_series_long(nodes: pd.DataFrame) -> pd.DataFrame:
         candidates = [
             ("revenue", f"segment_fy{fy}_revenue_usd_bn"),
             ("ebitda", f"segment_fy{fy}_ebitda_usd_bn"),
+
             ("margin", f"segment_fy{fy}_ebitda_margin_pct"),
+
         ]
-        for metric_type, col in candidates:
-            if col not in nodes.columns:
-                continue
-            tmp = nodes[base_cols + [col]].copy()
-            tmp["metric_type"] = metric_type
-            tmp["fiscal_year"] = fy
-            tmp["value"] = tmp[col].map(safe_num)
-            tmp = tmp.drop(columns=[col])
-            rows.append(tmp)
-
-    if not rows:
-        # Return empty but correctly-shaped dataframe (prevents KeyError downstream)
-        return pd.DataFrame(columns=expected_cols)
-
-    out = pd.concat(rows, ignore_index=True)
-
-    # Ensure required cols exist even if base_cols missing unexpectedly
-    for c in expected_cols:
-        if c not in out.columns:
-            out[c] = np.nan
-
-    out["node_id"] = out["node_id"].astype(str)
-    out["path"] = out["path"].astype(str)
-    return out[expected_cols]
-
