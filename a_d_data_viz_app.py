@@ -47,6 +47,7 @@ def main() -> None:
     q = st.sidebar.text_input("Search node", value="")
     nodes_view = nodes
     if q.strip():
+        pass
 
     if nodes_view.empty:
         st.sidebar.warning("No nodes match your search.")
