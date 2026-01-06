@@ -40,6 +40,22 @@ def postprocess(wb: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
 def main() -> None:
     st.sidebar.header("Dataset")
 
+    DEFAULT_PATH = "data/a_d_database.xlsx"
+
+    uploaded = st.sidebar.file_uploader(
+        "Optional: upload a different workbook",
+        type=["xlsx"],
+    )
+
+    if uploaded is not None:
+        wb = load_all_from_bytes(uploaded.read())
+        label = f"Uploaded: {uploaded.name}"
+    else:
+        wb = load_all_from_path(DEFAULT_PATH)
+        label = f"Default dataset: {DEFAULT_PATH}"
+
+    wb = postprocess(wb)
+    nodes = wb["Nodes"]
     st.title("A&D Market Explorer (v2)")
     st.caption(label)
 
@@ -47,7 +63,7 @@ def main() -> None:
     q = st.sidebar.text_input("Search node", value="")
     nodes_view = nodes
     if q.strip():
-        pass
+        nodes_view = nodes[nodes["display_name"].astype(str).str.contains(q, case=False, na=False)]
 
     if nodes_view.empty:
         st.sidebar.warning("No nodes match your search.")
