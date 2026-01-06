@@ -9,6 +9,7 @@ from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_prox
 
 st.set_page_config(page_title="A&D Market Explorer (v2)", layout="wide")
 
+
 @st.cache_data(show_spinner=True)
 def load_all_from_path(path: str) -> dict[str, pd.DataFrame]:
     return load_workbook_path(path)
@@ -118,17 +119,15 @@ def main() -> None:
     # ----------------------------
     # Tabs
     # ----------------------------
-    tab1, tab2 = st.tabs(["Overview", "Node Dashboard"])
-
-    with tab1:
+        nodes = wb.get("Nodes", pd.DataFrame()).copy()
+        players = clean_players(wb.get("Players", pd.DataFrame()).copy())
+        proxies = clean_proxies(wb.get("Proxies", pd.DataFrame()).copy())
         st.subheader(node.get("display_name", ""))
         st.caption(node.get("path", ""))
         kpis()
 
     scope = str(node.get("scope_context", "") or "").strip()
     fin = str(node.get("financial_commentary", "") or "").strip()
-    method = str(node.get("methodology_summary", "") or "").strip()
-
     if scope:
         st.text_area("Scope", value=scope, height=180, disabled=True)
     if fin:
@@ -186,7 +185,68 @@ def main() -> None:
             margin=dict(l=10, r=10, t=40, b=10)
         )
 
-    st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("### Players & Proxies")
+
+        # Use already cleaned DataFrames from main()
+        pid = str(node.get("node_id"))
+        if not players_all.empty and "node_id" in players_all.columns:
+            p = players_all[players_all["node_id"].astype(str) == pid].copy()
+        else:
+            p = pd.DataFrame()
+
+        if not proxies_all.empty and "node_id" in proxies_all.columns:
+            pr = proxies_all[proxies_all["node_id"].astype(str) == pid].copy()
+        else:
+            pr = pd.DataFrame()
+
+        c1, c2 = st.columns(2)
+
+        with c1:
+            st.subheader("Top Players")
+            if p.empty:
+                st.caption("No player rows for this node yet.")
+            else:
+                # Prefer sorted by rank if available
+                if "rank" in p.columns:
+                    p = p.sort_values("rank", ascending=True)
+
+                # Keep to the most useful columns if present
+                wanted = [
+                    "rank",
+                    "name",
+                    "country",
+                    "type",
+                    "player_fy25_revenue_usd_bn",
+                    "player_fy25_ebitda_usd_bn",
+                    "player_fy25_ebitda_margin_pct",
+                    "confidence_score",
+                    "attribution_basis",
+                ]
+                cols = [c for c in wanted if c in p.columns]
+                st.dataframe(p[cols].head(10), use_container_width=True, hide_index=True)
+
+        with c2:
+            st.subheader("Proxies")
+            if pr.empty:
+                st.caption("No proxy rows for this node yet.")
+            else:
+                wanted = [
+                    "rank",
+                    "name",
+                    "country",
+                    "proxy_reason",
+                    "proxy_fy25_revenue_usd_bn",
+                    "proxy_fy25_ebitda_usd_bn",
+                    "proxy_fy25_ebitda_margin_pct",
+                    "confidence_score",
+                ]
+                cols = [c for c in wanted if c in pr.columns]
+                # Some sheets may not have rank; show first N
+                if "rank" in pr.columns:
+                    pr = pr.sort_values("rank", ascending=True)
+                st.dataframe(pr[cols].head(10), use_container_width=True, hide_index=True)
 
 
 if __name__ == "__main__":
