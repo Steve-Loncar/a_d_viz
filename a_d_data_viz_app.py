@@ -1,4 +1,5 @@
 import pandas as pd
+import math
 import streamlit as st
 
 import plotly.express as px
@@ -98,22 +99,26 @@ def main() -> None:
     # ----------------------------
     # KPI helper
     # ----------------------------
-    def kpis(fy: int = 2025):
-        rev = safe_num(node.get(f"segment_fy{fy}_revenue_usd_bn"))
-        ebitda = safe_num(node.get(f"segment_fy{fy}_ebitda_usd_bn"))
-        margin = safe_num(node.get(f"segment_fy{fy}_ebitda_margin_pct"))
+    def kpis(fy: int = 25):
+        # Spreadsheet uses two-digit FY columns: segment_fy15 ... segment_fy25
+        fy2 = fy % 100 if fy > 100 else fy
+        fy_label = 2000 + fy2  # FY25 -> 2025 for display
+
+        rev = safe_num(node.get(f"segment_fy{fy2:02d}_revenue_usd_bn"))
+        ebitda = safe_num(node.get(f"segment_fy{fy2:02d}_ebitda_usd_bn"))
+        margin = safe_num(node.get(f"segment_fy{fy2:02d}_ebitda_margin_pct"))
 
         c1, c2, c3 = st.columns(3)
         c1.metric(
-            f"FY{fy} Revenue (USD bn)",
+            f"FY{fy_label} Revenue (USD bn)",
             f"{rev:,.3g}" if pd.notna(rev) else "—",
         )
         c2.metric(
-            f"FY{fy} EBITDA (USD bn)",
+            f"FY{fy_label} EBITDA (USD bn)",
             f"{ebitda:,.3g}" if pd.notna(ebitda) else "—",
         )
         c3.metric(
-            f"FY{fy} EBITDA Margin (%)",
+            f"FY{fy_label} EBITDA Margin (%)",
             f"{margin:,.3g}" if pd.notna(margin) else "—",
         )
 
