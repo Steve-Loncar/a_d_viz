@@ -88,14 +88,15 @@ def render_taxonomy_architecture(nodes: pd.DataFrame) -> None:
         st.info("No Nodes/path data available.")
         return
 
-    # IMPORTANT: build the *map rows* from LEAF nodes only.
-    # Otherwise you get diagonal "step-down" (because depth-1/2/3 nodes become their own rows).
+    # IMPORTANT: build the *map rows* from LEAF nodes only (old app behaviour).
+    # In v2, `level` is reliable: max(level) == leaf level.
     df_map = nodes
-    if "node_id" in nodes.columns and "parent_id" in nodes.columns:
-        node_ids = nodes["node_id"].fillna("").astype(str).str.strip()
-        parent_ids = nodes["parent_id"].fillna("").astype(str).str.strip()
-        parents = set([p for p in parent_ids.tolist() if p])
-        df_map = nodes[~node_ids.isin(parents)].copy()
+    if "level" in nodes.columns:
+        try:
+            max_level = int(pd.to_numeric(nodes["level"], errors="coerce").max())
+            df_map = nodes[pd.to_numeric(nodes["level"], errors="coerce") == max_level].copy()
+        except Exception:
+            df_map = nodes.copy()
 
     df, hcols = _with_path_hierarchy(df_map)
     if not hcols:
