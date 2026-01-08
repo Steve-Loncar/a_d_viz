@@ -303,46 +303,46 @@ def main() -> None:
             # Light formatting for readability
             table_fmt = table_t.copy()
             for i, y in enumerate(year_cols):
-            try:
-                table_fmt.loc[table_fmt["Metric"] == "Revenue (USD bn)", y] = (
-                    "" if pd.isna(table_t.loc[0, y]) else f"{float(table_t.loc[0, y]):,.3f}"
-                )
-            except Exception:
-                table_fmt.loc[table_fmt["Metric"] == "Revenue (USD bn)", y] = ""
-            try:
-                table_fmt.loc[table_fmt["Metric"] == "EBITDA (USD bn)", y] = (
-                    "" if pd.isna(table_t.loc[1, y]) else f"{float(table_t.loc[1, y]):,.3f}"
-                )
-            except Exception:
-                table_fmt.loc[table_fmt["Metric"] == "EBITDA (USD bn)", y] = ""
-            try:
-                table_fmt.loc[table_fmt["Metric"] == "EBITDA Margin (%)", y] = (
-                    "" if pd.isna(table_t.loc[2, y]) else f"{float(table_t.loc[2, y]):,.1f}"
-                )
-            except Exception:
-                table_fmt.loc[table_fmt["Metric"] == "EBITDA Margin (%)", y] = ""
+                try:
+                    table_fmt.loc[table_fmt["Metric"] == "Revenue (USD bn)", y] = (
+                        "" if pd.isna(table_t.loc[0, y]) else f"{float(table_t.loc[0, y]):,.3f}"
+                    )
+                except Exception:
+                    table_fmt.loc[table_fmt["Metric"] == "Revenue (USD bn)", y] = ""
+                try:
+                    table_fmt.loc[table_fmt["Metric"] == "EBITDA (USD bn)", y] = (
+                        "" if pd.isna(table_t.loc[1, y]) else f"{float(table_t.loc[1, y]):,.3f}"
+                    )
+                except Exception:
+                    table_fmt.loc[table_fmt["Metric"] == "EBITDA (USD bn)", y] = ""
+                try:
+                    table_fmt.loc[table_fmt["Metric"] == "EBITDA Margin (%)", y] = (
+                        "" if pd.isna(table_t.loc[2, y]) else f"{float(table_t.loc[2, y]):,.1f}"
+                    )
+                except Exception:
+                    table_fmt.loc[table_fmt["Metric"] == "EBITDA Margin (%)", y] = ""
 
             st.dataframe(table_fmt, use_container_width=True, hide_index=True)
 
             # Financial commentary (below table)
             fin = str(node.get("financial_commentary", "") or "").strip()
             if fin:
-            render_card("Financial commentary", fin)
+                render_card("Financial commentary", fin)
 
-            with tab3:
+        with tab3:
             st.subheader("Players & Proxies")
             st.caption(node.get("path", ""))
 
             pid = str(node.get("node_id"))
             players = (
-            players_all[players_all["node_id"].astype(str) == pid].copy()
-            if (not players_all.empty and "node_id" in players_all.columns)
-            else pd.DataFrame()
+                players_all[players_all["node_id"].astype(str) == pid].copy()
+                if (not players_all.empty and "node_id" in players_all.columns)
+                else pd.DataFrame()
             )
             proxies = (
-            proxies_all[proxies_all["node_id"].astype(str) == pid].copy()
-            if (not proxies_all.empty and "node_id" in proxies_all.columns)
-            else pd.DataFrame()
+                proxies_all[proxies_all["node_id"].astype(str) == pid].copy()
+                if (not proxies_all.empty and "node_id" in proxies_all.columns)
+                else pd.DataFrame()
             )
 
             # ----------------------------
@@ -356,75 +356,75 @@ def main() -> None:
             mgn_col = f"player_fy{fy2}_ebitda_margin_pct"
 
             if players.empty:
-            st.warning("No players found for this node.")
+                st.warning("No players found for this node.")
             else:
-            p = players.copy()
-            # Ensure numeric
-            p[rev_col] = p[rev_col].map(safe_num)
-            p[ebitda_col] = p[ebitda_col].map(safe_num)
-            p[mgn_col] = p[mgn_col].map(safe_num)
+                p = players.copy()
+                # Ensure numeric
+                p[rev_col] = p[rev_col].map(safe_num)
+                p[ebitda_col] = p[ebitda_col].map(safe_num)
+                p[mgn_col] = p[mgn_col].map(safe_num)
 
-            # Prefer rank ordering if present; otherwise revenue desc
-            if "rank" in p.columns and p["rank"].notna().any():
-                p = p.sort_values("rank", ascending=True)
-            else:
-                p = p.sort_values(rev_col, ascending=False)
+                # Prefer rank ordering if present; otherwise revenue desc
+                if "rank" in p.columns and p["rank"].notna().any():
+                    p = p.sort_values("rank", ascending=True)
+                else:
+                    p = p.sort_values(rev_col, ascending=False)
 
-            # Limit to keep charts readable (still "all players", but practical)
-            p_chart = p.head(25).copy()
+                # Limit to keep charts readable (still "all players", but practical)
+                p_chart = p.head(25).copy()
 
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                fig1 = px.bar(
-                    p_chart,
-                    x=rev_col,
-                    y="name",
-                    orientation="h",
-                    title=f"Revenue (USD bn) — {fy_pick}",
-                    hover_data=["country", "type"],
-                )
-                fig1.update_layout(margin=dict(l=10, r=10, t=45, b=10))
-                fig1.update_yaxes(categoryorder="total ascending")
-                st.plotly_chart(fig1, use_container_width=True)
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    fig1 = px.bar(
+                        p_chart,
+                        x=rev_col,
+                        y="name",
+                        orientation="h",
+                        title=f"Revenue (USD bn) — {fy_pick}",
+                        hover_data=["country", "type"],
+                    )
+                    fig1.update_layout(margin=dict(l=10, r=10, t=45, b=10))
+                    fig1.update_yaxes(categoryorder="total ascending")
+                    st.plotly_chart(fig1, use_container_width=True)
 
-            with c2:
-                fig2 = px.bar(
-                    p_chart,
-                    x=ebitda_col,
-                    y="name",
-                    orientation="h",
-                    title=f"EBITDA (USD bn) — {fy_pick}",
-                    hover_data=["country", "type"],
-                )
-                fig2.update_layout(margin=dict(l=10, r=10, t=45, b=10))
-                fig2.update_yaxes(categoryorder="total ascending")
-                st.plotly_chart(fig2, use_container_width=True)
+                with c2:
+                    fig2 = px.bar(
+                        p_chart,
+                        x=ebitda_col,
+                        y="name",
+                        orientation="h",
+                        title=f"EBITDA (USD bn) — {fy_pick}",
+                        hover_data=["country", "type"],
+                    )
+                    fig2.update_layout(margin=dict(l=10, r=10, t=45, b=10))
+                    fig2.update_yaxes(categoryorder="total ascending")
+                    st.plotly_chart(fig2, use_container_width=True)
 
-            with c3:
-                fig3 = px.bar(
-                    p_chart,
-                    x=mgn_col,
-                    y="name",
-                    orientation="h",
-                    title=f"EBITDA Margin (%) — {fy_pick}",
-                    hover_data=["country", "type"],
-                )
-                fig3.update_layout(margin=dict(l=10, r=10, t=45, b=10))
-                fig3.update_yaxes(categoryorder="total ascending")
-                st.plotly_chart(fig3, use_container_width=True)
+                with c3:
+                    fig3 = px.bar(
+                        p_chart,
+                        x=mgn_col,
+                        y="name",
+                        orientation="h",
+                        title=f"EBITDA Margin (%) — {fy_pick}",
+                        hover_data=["country", "type"],
+                    )
+                    fig3.update_layout(margin=dict(l=10, r=10, t=45, b=10))
+                    fig3.update_yaxes(categoryorder="total ascending")
+                    st.plotly_chart(fig3, use_container_width=True)
 
-            st.caption("Charts show top 25 for readability; tables below include full rows for the node.")
+                st.caption("Charts show top 25 for readability; tables below include full rows for the node.")
 
-            # Optional: full table directly beneath aggregated charts
-            st.markdown("### Players table")
-            p_tbl = p[[
-                "rank", "name", "country", "type",
-                "player_fy23_revenue_usd_bn", "player_fy24_revenue_usd_bn", "player_fy25_revenue_usd_bn",
-                "player_fy23_ebitda_usd_bn", "player_fy24_ebitda_usd_bn", "player_fy25_ebitda_usd_bn",
-                "player_fy23_ebitda_margin_pct", "player_fy24_ebitda_margin_pct", "player_fy25_ebitda_margin_pct",
-                "confidence_score", "attribution_basis"
-            ]].copy()
-            st.dataframe(p_tbl, use_container_width=True, hide_index=True)
+                # Optional: full table directly beneath aggregated charts
+                st.markdown("### Players table")
+                p_tbl = p[[
+                    "rank", "name", "country", "type",
+                    "player_fy23_revenue_usd_bn", "player_fy24_revenue_usd_bn", "player_fy25_revenue_usd_bn",
+                    "player_fy23_ebitda_usd_bn", "player_fy24_ebitda_usd_bn", "player_fy25_ebitda_usd_bn",
+                    "player_fy23_ebitda_margin_pct", "player_fy24_ebitda_margin_pct", "player_fy25_ebitda_margin_pct",
+                    "confidence_score", "attribution_basis"
+                ]].copy()
+                st.dataframe(p_tbl, use_container_width=True, hide_index=True)
 
             # ----------------------------
             # 2) Commentary
@@ -432,61 +432,60 @@ def main() -> None:
             player_comm = str(node.get("player_commentary", "") or "").strip()
             proxy_comm = str(node.get("proxy_commentary", "") or "").strip()
             if player_comm:
-            render_card("Player commentary", player_comm)
+                render_card("Player commentary", player_comm)
             if proxy_comm:
-            render_card("Proxy commentary", proxy_comm)
+                render_card("Proxy commentary", proxy_comm)
 
             # ----------------------------
             # 3) Top 10 combo charts (FY23–FY25)
             # ----------------------------
             if not players.empty:
-            st.markdown("### Top 10 players — FY23–FY25")
-            p10 = players.copy()
-            if "rank" in p10.columns and p10["rank"].notna().any():
-                p10 = p10.sort_values("rank", ascending=True)
-            else:
-                p10 = p10.sort_values("player_fy25_revenue_usd_bn", ascending=False)
-            p10 = p10.head(10)
+                st.markdown("### Top 10 players — FY23–FY25")
+                p10 = players.copy()
+                if "rank" in p10.columns and p10["rank"].notna().any():
+                    p10 = p10.sort_values("rank", ascending=True)
+                else:
+                    p10 = p10.sort_values("player_fy25_revenue_usd_bn", ascending=False)
+                p10 = p10.head(10)
 
-            years = [2023, 2024, 2025]
-            cols = st.columns(2)
-            for i, (_, r) in enumerate(p10.iterrows()):
-                rev = [safe_num(r.get(f"player_fy{y%100}_revenue_usd_bn")) for y in years]
-                ebt = [safe_num(r.get(f"player_fy{y%100}_ebitda_usd_bn")) for y in years]
-                mgn = [safe_num(r.get(f"player_fy{y%100}_ebitda_margin_pct")) for y in years]
+                years = [2023, 2024, 2025]
+                cols = st.columns(2)
+                for i, (_, r) in enumerate(p10.iterrows()):
+                    rev = [safe_num(r.get(f"player_fy{y%100}_revenue_usd_bn")) for y in years]
+                    ebt = [safe_num(r.get(f"player_fy{y%100}_ebitda_usd_bn")) for y in years]
+                    mgn = [safe_num(r.get(f"player_fy{y%100}_ebitda_margin_pct")) for y in years]
 
-                fig = make_subplots(specs=[[{"secondary_y": True}]])
-                fig.add_trace(go.Bar(name="Revenue (USD bn)", x=years, y=rev, offsetgroup="rev"), secondary_y=False)
-                fig.add_trace(go.Bar(name="EBITDA (USD bn)", x=years, y=ebt, offsetgroup="ebt"), secondary_y=False)
-                fig.add_trace(go.Scatter(name="Margin (%)", x=years, y=mgn, mode="lines+markers"), secondary_y=True)
-                fig.update_layout(
-                    barmode="group",
-                    title=dict(text=str(r.get("name", "")), x=0.0, xanchor="left"),
-                    margin=dict(l=10, r=10, t=55, b=10),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-                )
-                fig.update_xaxes(title_text="Fiscal Year", showgrid=False)
-                fig.update_yaxes(title_text="USD bn", secondary_y=False, showgrid=False, zeroline=False)
-                fig.update_yaxes(title_text="Margin (%)", secondary_y=True, showgrid=False, zeroline=False)
+                    fig = make_subplots(specs=[[{"secondary_y": True}]])
+                    fig.add_trace(go.Bar(name="Revenue (USD bn)", x=years, y=rev, offsetgroup="rev"), secondary_y=False)
+                    fig.add_trace(go.Bar(name="EBITDA (USD bn)", x=years, y=ebt, offsetgroup="ebt"), secondary_y=False)
+                    fig.add_trace(go.Scatter(name="Margin (%)", x=years, y=mgn, mode="lines+markers"), secondary_y=True)
+                    fig.update_layout(
+                        barmode="group",
+                        title=dict(text=str(r.get("name", "")), x=0.0, xanchor="left"),
+                        margin=dict(l=10, r=10, t=55, b=10),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                    )
+                    fig.update_xaxes(title_text="Fiscal Year", showgrid=False)
+                    fig.update_yaxes(title_text="USD bn", secondary_y=False, showgrid=False, zeroline=False)
+                    fig.update_yaxes(title_text="Margin (%)", secondary_y=True, showgrid=False, zeroline=False)
 
-                with cols[i % 2]:
-                    st.plotly_chart(fig, use_container_width=True)
+                    with cols[i % 2]:
+                        st.plotly_chart(fig, use_container_width=True)
 
             # Proxies table (simple for now; we can add proxy charts next)
             st.markdown("### Proxies table")
             if proxies.empty:
-            st.caption("No proxies for this node.")
+                st.caption("No proxies for this node.")
             else:
-            pr_tbl = proxies[[
-                "name", "country", "type", "proxy_reason",
-                "proxy_fy23_revenue_usd_bn", "proxy_fy24_revenue_usd_bn", "proxy_fy25_revenue_usd_bn",
-                "proxy_fy23_ebitda_usd_bn", "proxy_fy24_ebitda_usd_bn", "proxy_fy25_ebitda_usd_bn",
-                "proxy_fy23_ebitda_margin_pct", "proxy_fy24_ebitda_margin_pct", "proxy_fy25_ebitda_margin_pct",
-                "confidence_score"
-            ]].copy()
-            st.dataframe(pr_tbl, use_container_width=True, hide_index=True)
+                pr_tbl = proxies[[
+                    "name", "country", "type", "proxy_reason",
+                    "proxy_fy23_revenue_usd_bn", "proxy_fy24_revenue_usd_bn", "proxy_fy25_revenue_usd_bn",
+                    "proxy_fy23_ebitda_usd_bn", "proxy_fy24_ebitda_usd_bn", "proxy_fy25_ebitda_usd_bn",
+                    "proxy_fy23_ebitda_margin_pct", "proxy_fy24_ebitda_margin_pct", "proxy_fy25_ebitda_margin_pct",
+                    "confidence_score"
+                ]].copy()
+                st.dataframe(pr_tbl, use_container_width=True, hide_index=True)
 
-            with tab4:
         with tab4:
             st.subheader("Evidence mapping")
             st.caption("Next: node-level evidence links & coverage (EVID ↔ claims).")
