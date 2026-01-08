@@ -495,3 +495,6 @@ def main() -> None:
         st.subheader("Overall taxonomy analysis")
         st.info("Next: heatmaps, coverage, rankings, and cross-node comparisons.")
 
+
+if __name__ == "__main__":
+    main()
