@@ -164,6 +164,33 @@ def _get_sheet(wb: dict[str, pd.DataFrame], names: list[str]) -> pd.DataFrame:
             return df
     return pd.DataFrame()
 
+def _split_supported_by(x) -> list[str]:
+    """
+    Evidence_Map.supported_by is often stored as a string (e.g. "EVID:1, EVID:2")
+    or sometimes a JSON-ish list. Keep it deterministic and forgiving.
+    """
+    if x is None:
+        return []
+    if isinstance(x, float) and pd.isna(x):
+        return []
+    if isinstance(x, (list, tuple, set)):
+        return [str(i).strip() for i in x if str(i).strip()]
+    s = str(x).strip()
+    if not s:
+        return []
+    # Try JSON list first
+    if s.startswith("[") and s.endswith("]"):
+        try:
+            import json
+            arr = json.loads(s)
+            if isinstance(arr, list):
+                return [str(i).strip() for i in arr if str(i).strip()]
+        except Exception:
+            pass
+    # Fallback: comma/semicolon separated
+    parts = re.split(r"[;,]\s*|\s{2,}", s)
+    return [p.strip() for p in parts if p.strip()]
+
 def main() -> None:
     st.sidebar.header("Dataset")
 
@@ -186,6 +213,7 @@ def main() -> None:
     players_all = wb["Players"]
     proxies_all = wb["Proxies"]
     evidence_all = _get_sheet(wb, ["Evidence", "EVIDENCE", "evidence"])
+    evidence_map_all = _get_sheet(wb, ["Evidence_Map", "EVIDENCE_MAP", "evidence_map", "Evidence map"])
 
     st.title("A&D Market Explorer (v2)")
     st.caption(label)
@@ -564,6 +592,33 @@ def main() -> None:
                 st.info("No evidence rows found for this node_id.")
                 st.stop()
 
+            # Build an evidence_id -> [fields supported] mapping from Evidence_Map
+            supports_by_evid: dict[str, list[str]] = {}
+            if not evidence_map_all.empty and "node_id" in evidence_map_all.columns:
+                em = evidence_map_all[evidence_map_all["node_id"].astype(str) == pid].copy()
+                # Require at least field + supported_by
+                if not em.empty and "field" in em.columns and "supported_by" in em.columns:
+                    rows = []
+                    for _, r in em.iterrows():
+                        field = str(r.get("field", "") or "").strip()
+                        evids = _split_supported_by(r.get("supported_by"))
+                        for e in evids:
+                            rows.append((e.strip(), field))
+                    if rows:
+                        tmp = pd.DataFrame(rows, columns=["evidence_id", "field"])
+                        tmp["evidence_id"] = tmp["evidence_id"].astype(str).str.strip()
+                        tmp["field"] = tmp["field"].astype(str).str.strip()
+                        for evid, g in tmp.groupby("evidence_id"):
+                            fields = [f for f in g["field"].tolist() if f]
+                            # de-dupe preserving order
+                            seen = set()
+                            out = []
+                            for f in fields:
+                                if f not in seen:
+                                    out.append(f)
+                                    seen.add(f)
+                            supports_by_evid[evid] = out
+
             def _clean(x):
                 if x is None:
                     return ""
@@ -587,6 +642,18 @@ def main() -> None:
                 # Canonical: parse from snippet so it is consistent across all evidence
                 snippet = _clean(r.get("snippet") or r.get("excerpt") or "")
                 source_ref, quote, _ = _parse_evidence_snippet(snippet)
+
+                # What this evidence supports (from Evidence_Map)
+                supports_fields = supports_by_evid.get(evid, [])
+                supports_html = ""
+                if supports_fields:
+                    # keep it client-friendly: show first ~8, then "+N more"
+                    show_n = 8
+                    shown = supports_fields[:show_n]
+                    more = len(supports_fields) - len(shown)
+                    bullet_lis = "".join(f"<li>{html.escape(f)}</li>" for f in shown)
+                    suffix = f"<div style='opacity:0.7; margin-top:6px;'>+{more} more</div>" if more > 0 else ""
+                    supports_html = f"<div style='margin-top:10px;'><span style='font-weight:650;'>Supports:</span><ul style='margin:6px 0 0 1.1rem;'>{bullet_lis}</ul>{suffix}</div>"
 
                 # Title line: clickable if URL available
                 if title and url:
@@ -637,6 +704,7 @@ def main() -> None:
                       {'<div style="opacity:0.75; font-size: 0.92rem; margin-bottom: 10px;">' + html.escape(meta) + '</div>' if meta else ''}
                       {sr_html}
                       {quote_html}
+                      {supports_html}
                     </div>
                     """,
                     unsafe_allow_html=True,
