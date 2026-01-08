@@ -152,6 +152,18 @@ def postprocess(wb: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
 
     return wb_out
 
+def _get_sheet(wb: dict[str, pd.DataFrame], names: list[str]) -> pd.DataFrame:
+    """
+    Return the first matching sheet as a DataFrame.
+    IMPORTANT: don't use `df or other_df` because pandas DataFrames cannot be
+    evaluated as booleans (raises ValueError: ambiguous truth value).
+    """
+    for name in names:
+        df = wb.get(name)
+        if isinstance(df, pd.DataFrame):
+            return df
+    return pd.DataFrame()
+
 def main() -> None:
     st.sidebar.header("Dataset")
 
@@ -173,12 +185,7 @@ def main() -> None:
     nodes = wb["Nodes"]
     players_all = wb["Players"]
     proxies_all = wb["Proxies"]
-    evidence_all = (
-        wb.get("Evidence")
-        or wb.get("EVIDENCE")
-        or wb.get("evidence")
-        or pd.DataFrame()
-    )
+    evidence_all = _get_sheet(wb, ["Evidence", "EVIDENCE", "evidence"])
 
     st.title("A&D Market Explorer (v2)")
     st.caption(label)
