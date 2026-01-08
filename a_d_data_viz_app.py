@@ -6,6 +6,9 @@ import plotly.express as px
 import re
 import html
 
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
 from lib.loader import load_workbook_bytes, load_workbook_path
 from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_proxies
 
@@ -222,37 +225,52 @@ def main() -> None:
         ebitda = [safe_num(node.get(c)) for c in ebitda_cols]
         margin = [safe_num(node.get(c)) for c in margin_cols]
 
-        # Layout: Revenue + EBITDA side-by-side, Margin full-width beneath
-        c_rev, c_ebitda = st.columns(2)
+        # Combo chart: clustered bars (Revenue, EBITDA) + margin line on secondary axis
+        x = year_labels
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-        with c_rev:
-            df_rev = pd.DataFrame({"Fiscal Year": year_labels, "Revenue (USD bn)": rev})
-            fig_rev = px.line(
-                df_rev,
-                x="Fiscal Year",
-                y="Revenue (USD bn)",
-                markers=True,
-                title="Revenue (USD bn)",
-            )
-            fig_rev.update_layout(margin=dict(l=10, r=10, t=45, b=10))
-            st.plotly_chart(fig_rev, use_container_width=True)
+        fig.add_trace(
+            go.Bar(
+                name="Revenue (USD bn)",
+                x=x,
+                y=rev,
+                offsetgroup="rev",
+            ),
+            secondary_y=False,
+        )
 
-        with c_ebitda:
-            df_e = pd.DataFrame({"Fiscal Year": year_labels, "EBITDA (USD bn)": ebitda})
-            fig_e = px.line(
-                df_e,
-                x="Fiscal Year",
-                y="EBITDA (USD bn)",
-                markers=True,
-                title="EBITDA (USD bn)",
-            )
-            fig_e.update_layout(margin=dict(l=10, r=10, t=45, b=10))
-            st.plotly_chart(fig_e, use_container_width=True)
+        fig.add_trace(
+            go.Bar(
+                name="EBITDA (USD bn)",
+                x=x,
+                y=ebitda,
+                offsetgroup="ebitda",
+            ),
+            secondary_y=False,
+        )
 
-        df_m = pd.DataFrame({"Fiscal Year": year_labels, "EBITDA Margin (%)": margin})
-        fig_m = px.line(df_m, x="Fiscal Year", y="EBITDA Margin (%)", markers=True, title="EBITDA Margin (%)")
-        fig_m.update_layout(margin=dict(l=10, r=10, t=45, b=10))
-        st.plotly_chart(fig_m, use_container_width=True)
+        fig.add_trace(
+            go.Scatter(
+                name="EBITDA Margin (%)",
+                x=x,
+                y=margin,
+                mode="lines+markers",
+            ),
+            secondary_y=True,
+        )
+
+        fig.update_layout(
+            barmode="group",
+            title_text="Revenue, EBITDA and Margin",
+            margin=dict(l=10, r=10, t=55, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        )
+
+        fig.update_xaxes(title_text="Fiscal Year")
+        fig.update_yaxes(title_text="USD bn", secondary_y=False)
+        fig.update_yaxes(title_text="Margin (%)", secondary_y=True)
+
+        st.plotly_chart(fig, use_container_width=True)
 
         # Financial commentary belongs here (not Overview)
         fin = str(node.get("financial_commentary", "") or "").strip()
