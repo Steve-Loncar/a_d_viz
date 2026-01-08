@@ -3,11 +3,76 @@ import math
 import streamlit as st
 
 import plotly.express as px
+import re
+import html
 
 from lib.loader import load_workbook_bytes, load_workbook_path
 from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_proxies
 
+
 st.set_page_config(page_title="A&D Market Explorer (v2)", layout="wide")
+
+
+def _to_bullets(text: str) -> str:
+    """
+    Turn dense text into bullets.
+    - If the text already contains newline-delimited bullets, keep them.
+    - Otherwise split into sentences and bullet them.
+    Returns HTML (escaped) inside <ul>.
+    """
+    if not text:
+        return ""
+
+    raw = str(text).strip()
+    if not raw:
+        return ""
+
+    # If user/agent already gave newline-ish bullets, respect them
+    lines = [ln.strip() for ln in re.split(r"\r?\n+", raw) if ln.strip()]
+    looks_like_bullets = sum(1 for ln in lines if ln.startswith(("-", "•", "*"))) >= 2
+
+    items: list[str] = []
+    if looks_like_bullets:
+        for ln in lines:
+            ln2 = ln.lstrip("-•*").strip()
+            if ln2:
+                items.append(ln2)
+    else:
+        # Sentence split (good enough for now)
+        sents = re.split(r"(?<=[.!?])\s+", raw)
+        sents = [s.strip() for s in sents if s and s.strip()]
+        # If it’s just one long sentence, keep as a single paragraph bullet
+        items = sents if len(sents) > 1 else [raw]
+
+    lis = "".join(f"<li>{html.escape(i)}</li>" for i in items)
+    return f"<ul style='margin: 0.25rem 0 0.25rem 1.1rem;'>{lis}</ul>"
+
+
+def render_card(title: str, text: str) -> None:
+    """
+    Non-scrolling “card” with bullet formatting for readability.
+    """
+    if not text:
+        return
+    body_html = _to_bullets(text)
+    if not body_html:
+        return
+
+    st.markdown(
+        f"""
+        <div style="
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin: 10px 0 18px 0;
+            background: rgba(255,255,255,0.03);
+        ">
+          <div style="font-weight: 650; margin-bottom: 8px;">{html.escape(title)}</div>
+          <div style="opacity: 0.92; line-height: 1.45;">{body_html}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 @st.cache_data(show_spinner=True)
@@ -129,26 +194,18 @@ def main() -> None:
         st.caption(node.get("path", ""))
         kpis()
 
+        # Overview content (no scroll boxes)
+        # NOTE: financial_commentary moved to Tab 2 in the next step
+        desc = str(node.get("node_description", "") or node.get("description", "") or "").strip()
         scope = str(node.get("scope_context", "") or "").strip()
-        fin = str(node.get("financial_commentary", "") or "").strip()
         method = str(node.get("methodology_summary", "") or "").strip()
 
+        if desc:
+            render_card("Node description", desc)
         if scope:
-            st.text_area("Scope", value=scope, height=180, disabled=True)
-        if fin:
-            st.text_area(
-                "Financial commentary",
-                value=fin,
-                height=180,
-                disabled=True,
-            )
+            render_card("Scope", scope)
         if method:
-            st.text_area(
-                "Methodology",
-                value=method,
-                height=180,
-                disabled=True,
-            )
+            render_card("Methodology", method)
 
     with tab2:
         st.subheader(node.get("display_name", ""))
