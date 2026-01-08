@@ -13,7 +13,7 @@ import html
 from lib.loader import load_workbook_bytes, load_workbook_path
 from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_proxies
 
-st.set_page_config(page_title="A&D Market Explorer (v2)\", layout="wide")
+st.set_page_config(page_title="A&D Market Explorer (v2)", layout="wide")
 
 def _hierarchy_cols(nodes: pd.DataFrame) -> List[str]:
     """Return hierarchy columns in left->right order."""
