@@ -1,6 +1,7 @@
 import pandas as pd
 import math
 import streamlit as st
+import textwrap
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -10,7 +11,6 @@ import html
 
 from lib.loader import load_workbook_bytes, load_workbook_path
 from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_proxies
-
 
 st.set_page_config(page_title="A&D Market Explorer (v2)", layout="wide")
 
@@ -48,6 +48,53 @@ def _to_bullets(text: str) -> str:
 
     lis = "".join(f"<li>{html.escape(i)}</li>" for i in items)
     return f"<ul style='margin: 0.25rem 0 0.25rem 1.1rem;'>{lis}</ul>"
+
+def _parse_evidence_snippet(snippet: str) -> tuple[str, str, str]:
+    """
+    Deterministic parser for the evidence memo format.
+    We standardise around these labels:
+      - 'Source reference:'
+      - 'Quote:'
+    Returns (source_reference, quote, remainder).
+    If labels aren't present, quote falls back to the full snippet.
+    """
+    if not snippet:
+        return ("", "", "")
+
+    s = str(snippet).strip()
+    if not s:
+        return ("", "", "")
+
+    # Normalise newlines
+    s = re.sub(r"\r\n?", "\n", s)
+
+    # Try to extract "Source reference:" and "Quote:" blocks
+    # We keep it intentionally simple and tolerant to whitespace.
+    src = ""
+    quote = ""
+    remainder = s
+
+    m_src = re.search(r"(?is)\bSource\s+reference\s*:\s*(.*?)(?:\n\s*\bQuote\s*:|$)", s)
+    if m_src:
+        src = m_src.group(1).strip()
+
+    m_q = re.search(r"(?is)\bQuote\s*:\s*(.*)$", s)
+    if m_q:
+        quote = m_q.group(1).strip()
+
+    # If we extracted anything, compute a clean remainder (optional)
+    if m_src or m_q:
+        remainder = s
+        if m_src:
+            remainder = re.sub(r"(?is)\bSource\s+reference\s*:\s*.*?(?=\n\s*\bQuote\s*:|$)", "", remainder).strip()
+        if m_q:
+            remainder = re.sub(r"(?is)\bQuote\s*:\s*.*$", "", remainder).strip()
+
+    # Hard fallback: if no Quote extracted, treat entire snippet as the quote body.
+    if not quote:
+        quote = s
+
+    return (src, quote, remainder)
 
 
 def render_card(title: str, text: str) -> None:
@@ -126,6 +173,12 @@ def main() -> None:
     nodes = wb["Nodes"]
     players_all = wb["Players"]
     proxies_all = wb["Proxies"]
+    evidence_all = (
+        wb.get("Evidence")
+        or wb.get("EVIDENCE")
+        or wb.get("evidence")
+        or pd.DataFrame()
+    )
 
     st.title("A&D Market Explorer (v2)")
     st.caption(label)
@@ -487,9 +540,100 @@ def main() -> None:
                 st.dataframe(pr_tbl, use_container_width=True, hide_index=True)
 
         with tab4:
-            st.subheader("Evidence mapping")
-            st.caption("Next: node-level evidence links & coverage (EVID ↔ claims).")
-            st.info("Tab 4 not wired yet — we'll do it next, one diff at a time.")
+            st.markdown("### Supporting evidence")
+
+            pid = str(node.get("node_id", "") or "")
+            if evidence_all.empty:
+                st.warning("Evidence sheet is empty or missing from the workbook.")
+                st.stop()
+
+            # Expect evidence rows to include node_id + evidence_id
+            if "node_id" not in evidence_all.columns or "evidence_id" not in evidence_all.columns:
+                st.warning("Evidence sheet missing required columns: node_id and/or evidence_id.")
+                st.stop()
+
+            ev_pick = evidence_all[evidence_all["node_id"].astype(str) == pid].copy()
+            if ev_pick.empty:
+                st.info("No evidence rows found for this node_id.")
+                st.stop()
+
+            def _clean(x):
+                if x is None:
+                    return ""
+                if isinstance(x, float) and pd.isna(x):
+                    return ""
+                return str(x).strip()
+
+            # Render evidence in a "research memo" style (like your screenshot)
+            for _, r in ev_pick.iterrows():
+                evid = _clean(r.get("evidence_id") or r.get("id") or "")
+                title = _clean(r.get("title") or r.get("source_title") or "")
+                url = _clean(r.get("url") or r.get("source_url") or "")
+
+                # Optional richer fields (if present in other projects / future schema)
+                dataset = _clean(r.get("dataset") or r.get("dataset_name") or "")
+                src_type = _clean(r.get("type") or r.get("source_type") or "")
+                supports = _clean(r.get("supports") or r.get("supports_field") or "")
+                strength = _clean(r.get("strength") or r.get("strength_score") or "")
+                conf = _clean(r.get("confidence_score") or "")
+
+                # Canonical: parse from snippet so it is consistent across all evidence
+                snippet = _clean(r.get("snippet") or r.get("excerpt") or "")
+                source_ref, quote, _ = _parse_evidence_snippet(snippet)
+
+                # Title line: clickable if URL available
+                if title and url:
+                    header_html = f"<a href='{html.escape(url)}' target='_blank' style='text-decoration:none; color: inherit;'>{html.escape(title)}</a>"
+                elif title:
+                    header_html = html.escape(title)
+                else:
+                    header_html = html.escape(evid or "Evidence item")
+
+                # Prefix with evidence ID like "E16 — …"
+                if evid:
+                    header_html = f"<span style='opacity:0.85'>{html.escape(evid)}</span> — {header_html}"
+
+                meta_parts = []
+                if dataset:
+                    meta_parts.append(dataset)
+                if src_type:
+                    meta_parts.append(src_type)
+                if strength:
+                    meta_parts.append(f"strength={strength}")
+                if conf:
+                    meta_parts.append(f"confidence={conf}")
+                if supports:
+                    meta_parts.append(f"supports: {supports}")
+                meta = " · ".join(meta_parts)
+
+                # Build sections: Source reference + Quote
+                sr_html = ""
+                if source_ref:
+                    sr_html = f"<div style='margin-top: 8px;'><span style='font-weight:650;'>Source reference:</span> {html.escape(source_ref)}</div>"
+
+                quote_html = ""
+                if quote:
+                    quote_html = f"<div style='margin-top: 6px;'><span style='font-weight:650;'>Quote:</span> {html.escape(quote)}</div>"
+
+                st.markdown(
+                    f"""
+                    <div style="
+                        border: 1px solid rgba(255,255,255,0.08);
+                        border-radius: 12px;
+                        padding: 16px 18px;
+                        margin: 14px 0 16px 0;
+                        background: rgba(255,255,255,0.02);
+                    ">
+                      <div style="font-weight: 750; font-size: 1.05rem; margin-bottom: 6px;">
+                        {header_html}
+                      </div>
+                      {'<div style="opacity:0.75; font-size: 0.92rem; margin-bottom: 10px;">' + html.escape(meta) + '</div>' if meta else ''}
+                      {sr_html}
+                      {quote_html}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
     with top_tax:
         st.subheader("Overall taxonomy analysis")
