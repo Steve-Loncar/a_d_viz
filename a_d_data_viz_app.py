@@ -191,6 +191,49 @@ def _split_supported_by(x) -> list[str]:
     parts = re.split(r"[;,]\s*|\s{2,}", s)
     return [p.strip() for p in parts if p.strip()]
 
+def humanise_support_field(field: str) -> str:
+    """
+    Translate internal support fields into client-readable claims.
+    Examples:
+      fy25_revenue_usd_bn -> FY2025 Node Revenue
+      player:Textron_Aviation:fy24_revenue_usd_bn -> FY2024 Textron Aviation Revenue
+    """
+    if not field:
+        return field
+
+    s = field.strip()
+
+    # Player-level: player:Name:fyXX_metric
+    if s.startswith("player:"):
+        try:
+            _, player, metric = s.split(":", 2)
+            player = player.replace("_", " ")
+            return f"{_humanise_fy_metric(metric)} ({player})"
+        except Exception:
+            return s
+
+    # Node-level metric
+    return _humanise_fy_metric(s)
+
+def _humanise_fy_metric(metric: str) -> str:
+    m = metric.lower()
+
+    # Extract FY
+    fy_match = re.search(r"fy(\d{2})", m)
+    fy = f"FY20{fy_match.group(1)}" if fy_match else ""
+
+    if "revenue" in m:
+        label = "Revenue"
+    elif "ebitda_margin" in m or "margin" in m:
+        label = "EBITDA Margin"
+    elif "ebitda" in m:
+        label = "EBITDA"
+    else:
+        return metric
+
+    scope = "Node"
+    return f"{fy} {scope} {label}".strip()
+
 def main() -> None:
     st.sidebar.header("Dataset")
 
@@ -647,9 +690,11 @@ def main() -> None:
                 supports_fields = supports_by_evid.get(evid, [])
                 supports_html = ""
                 if supports_fields:
-                    # keep it client-friendly: show first ~8, then "+N more"
+                    # Translate internal fields to client-readable claims
+                    translated = [humanise_support_field(f) for f in supports_fields]
+
                     show_n = 8
-                    shown = supports_fields[:show_n]
+                    shown = translated[:show_n]
                     more = len(supports_fields) - len(shown)
                     bullet_lis = "".join(f"<li>{html.escape(f)}</li>" for f in shown)
                     suffix = f"<div style='opacity:0.7; margin-top:6px;'>+{more} more</div>" if more > 0 else ""
