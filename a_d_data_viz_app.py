@@ -88,7 +88,16 @@ def render_taxonomy_architecture(nodes: pd.DataFrame) -> None:
         st.info("No Nodes/path data available.")
         return
 
-    df, hcols = _with_path_hierarchy(nodes)
+    # IMPORTANT: build the *map rows* from LEAF nodes only.
+    # Otherwise you get diagonal "step-down" (because depth-1/2/3 nodes become their own rows).
+    df_map = nodes
+    if "node_id" in nodes.columns and "parent_id" in nodes.columns:
+        node_ids = nodes["node_id"].fillna("").astype(str).str.strip()
+        parent_ids = nodes["parent_id"].fillna("").astype(str).str.strip()
+        parents = set([p for p in parent_ids.tolist() if p])
+        df_map = nodes[~node_ids.isin(parents)].copy()
+
+    df, hcols = _with_path_hierarchy(df_map)
     if not hcols:
         st.info("No taxonomy paths found to build hierarchy.")
         return
@@ -101,7 +110,7 @@ def render_taxonomy_architecture(nodes: pd.DataFrame) -> None:
     # Row key = full path.
     df["_full_path"] = df["path"].fillna("").astype(str).str.strip()
 
-    # Order rows by path to keep stable visual grouping
+    # Order LEAF rows by hierarchy to keep stable visual grouping
     leaf_rows = (
         df[hcols + ["_full_path"]]
         .fillna("")
