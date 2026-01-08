@@ -234,6 +234,57 @@ def _humanise_fy_metric(metric: str) -> str:
     scope = "Node"
     return f"{fy} {scope} {label}".strip()
 
+def humanise_column_name(col: str) -> str:
+    """
+    Turn raw dataframe column names into client-friendly headers.
+    Examples:
+      player_fy25_revenue_usd_bn -> FY2025 Revenue (USD bn)
+      proxy_fy24_ebitda_margin_pct -> FY2024 EBITDA Margin (%)
+      confidence_score -> Confidence
+      attribution_basis -> Attribution basis
+    """
+    if not col:
+        return col
+    s = str(col).strip()
+
+    # Known non-metric columns
+    static = {
+        "rank": "Rank",
+        "name": "Name",
+        "country": "Country",
+        "type": "Type",
+        "proxy_reason": "Proxy rationale",
+        "confidence_score": "Confidence",
+        "attribution_basis": "Attribution basis",
+        "node_id": "Node ID",
+        "player_id": "Player ID",
+        "proxy_id": "Proxy ID",
+    }
+    if s in static:
+        return static[s]
+
+    # Strip leading entity prefixes for readability in tables
+    # player_fy25_revenue_usd_bn -> fy25_revenue_usd_bn
+    # proxy_fy25_ebitda_usd_bn -> fy25_ebitda_usd_bn
+    s2 = re.sub(r"^(player|proxy)_", "", s)
+
+    # FY metric patterns
+    m = re.match(r"^fy(\d{2})_(.+)$", s2.lower())
+    if m:
+        yy = m.group(1)
+        rest = m.group(2)
+        fy = f"FY20{yy}"
+
+        if "revenue" in rest:
+            return f"{fy} Revenue (USD bn)"
+        if "ebitda_margin" in rest or rest.endswith("margin_pct") or "margin" in rest:
+            return f"{fy} EBITDA Margin (%)"
+        if "ebitda" in rest:
+            return f"{fy} EBITDA (USD bn)"
+
+    # Fallback: prettify snake_case
+    return s.replace("_", " ").strip().title()
+
 def main() -> None:
     st.sidebar.header("Dataset")
 
@@ -555,6 +606,7 @@ def main() -> None:
                     "player_fy23_ebitda_margin_pct", "player_fy24_ebitda_margin_pct", "player_fy25_ebitda_margin_pct",
                     "confidence_score", "attribution_basis"
                 ]].copy()
+                p_tbl = p_tbl.rename(columns={c: humanise_column_name(c) for c in p_tbl.columns})
                 st.dataframe(p_tbl, use_container_width=True, hide_index=True)
 
             # ----------------------------
@@ -615,6 +667,7 @@ def main() -> None:
                     "proxy_fy23_ebitda_margin_pct", "proxy_fy24_ebitda_margin_pct", "proxy_fy25_ebitda_margin_pct",
                     "confidence_score"
                 ]].copy()
+                pr_tbl = pr_tbl.rename(columns={c: humanise_column_name(c) for c in pr_tbl.columns})
                 st.dataframe(pr_tbl, use_container_width=True, hide_index=True)
 
         with tab4:
