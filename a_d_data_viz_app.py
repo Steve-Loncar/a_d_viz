@@ -111,6 +111,9 @@ def render_taxonomy_architecture(nodes: pd.DataFrame) -> None:
         .reset_index(drop=True)
     )
 
+    # Track previous row values so we can suppress repeated ancestors (old-app style)
+    prev = [""] * depth
+
     # Layout: slightly wider early levels
     weights = [1.2] + [1.2] + [1.2] + [1.4]
     if depth > 4:
@@ -131,14 +134,26 @@ def render_taxonomy_architecture(nodes: pd.DataFrame) -> None:
             idx = _node_index_for_path(nodes, partial_path)
 
             with row_cols[i]:
+                # Old-app layout:
+                # - show the node only when it changes vs previous row at that column
+                # - otherwise render blank to avoid repeating ancestors
                 if not val:
                     st.markdown("<div style='height: 1.55rem;'></div>", unsafe_allow_html=True)
-                else:
-                    # Use button to match v1 UX; click jumps selection
-                    if st.button(val, key=f"taxmap_{ridx}_{i}_{partial_path}"):
-                        if idx is not None:
-                            st.session_state["selected_idx"] = int(idx)
-                            st.rerun()
+                    continue
+
+                if val == prev[i]:
+                    # blank cell (no repetition)
+                    st.markdown("<div style='height: 1.55rem;'></div>", unsafe_allow_html=True)
+                    continue
+
+                # Show the node as a button
+                if st.button(val, key=f"taxmap_{ridx}_{i}_{partial_path}"):
+                    if idx is not None:
+                        st.session_state["selected_idx"] = int(idx)
+                        st.rerun()
+
+        # update prev row tracker
+        prev = [str(r.get(hcols[j], "") or "").strip() for j in range(depth)]
 
 
 def _to_bullets(text: str) -> str:
