@@ -65,6 +65,25 @@ def render_taxonomy_architecture(nodes: pd.DataFrame) -> None:
     st.header("Taxonomy architecture")
     st.caption("Taxonomy map (click a node to select)")
 
+    # Compact styling for the taxonomy map buttons (denser, less padding)
+    st.markdown(
+        """
+        <style>
+          /* tighter columns gap handled by Streamlit, but we tighten button padding/height */
+          div[data-testid="stButton"] > button {
+            padding: 0.15rem 0.45rem !important;
+            min-height: 1.55rem !important;
+            line-height: 1.1 !important;
+            font-size: 0.85rem !important;
+            border-radius: 0.4rem !important;
+          }
+          /* reduce vertical whitespace between blocks */
+          .block-container { padding-top: 1.0rem; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     if nodes is None or nodes.empty or "path" not in nodes.columns:
         st.info("No Nodes/path data available.")
         return
@@ -92,29 +111,17 @@ def render_taxonomy_architecture(nodes: pd.DataFrame) -> None:
         .reset_index(drop=True)
     )
 
-    # Tree-like display: suppress repeated parent labels row-to-row
-    prev = [""] * depth
-
     # Layout: slightly wider early levels
     weights = [1.2] + [1.2] + [1.2] + [1.4]
     if depth > 4:
         weights = weights + [1.2] * (depth - 4)
-    cols_layout = st.columns(weights[:depth], gap="large")
 
-    # Header row (level labels)
-    for i, col in enumerate(cols_layout):
-        with col:
-            st.markdown(f"**{hcols[i].replace('H', 'Level ')}**")
-
-    st.markdown("---")
-
-    # Render rows
+    # Render rows (compact matrix: no stepping/blank spacer rows)
     for ridx, r in leaf_rows.iterrows():
-        row_cols = st.columns(weights[:depth], gap="large")
+        row_cols = st.columns(weights[:depth], gap="small")
 
         for i, colname in enumerate(hcols):
             val = str(r.get(colname, "") or "").strip()
-            show = val and (val != prev[i])
 
             # Build the path up to this level for selection
             # We reconstruct it from the row values up to i
@@ -124,18 +131,14 @@ def render_taxonomy_architecture(nodes: pd.DataFrame) -> None:
             idx = _node_index_for_path(nodes, partial_path)
 
             with row_cols[i]:
-                if show:
-                    label = val
+                if not val:
+                    st.markdown("<div style='height: 1.55rem;'></div>", unsafe_allow_html=True)
+                else:
                     # Use button to match v1 UX; click jumps selection
-                    if st.button(label, key=f"taxmap_{ridx}_{i}_{partial_path}"):
+                    if st.button(val, key=f"taxmap_{ridx}_{i}_{partial_path}"):
                         if idx is not None:
                             st.session_state["selected_idx"] = int(idx)
                             st.rerun()
-                else:
-                    # keep spacing consistent, but no repeated text
-                    st.markdown("<div style='height: 2.2rem;'></div>", unsafe_allow_html=True)
-
-        prev = [str(r.get(hcols[i], "") or "").strip() for i in range(depth)]
 
 
 def _to_bullets(text: str) -> str:
