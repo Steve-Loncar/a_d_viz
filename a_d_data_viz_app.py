@@ -2,6 +2,7 @@ import pandas as pd
 import math
 import streamlit as st
 import textwrap
+from typing import List
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -12,7 +13,79 @@ import html
 from lib.loader import load_workbook_bytes, load_workbook_path
 from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_proxies
 
-st.set_page_config(page_title="A&D Market Explorer (v2)", layout="wide")
+st.set_page_config(page_title="A&D Market Explorer (v2)\", layout="wide")
+
+def _hierarchy_cols(nodes: pd.DataFrame) -> List[str]:
+    """Return hierarchy columns in left->right order."""
+    if nodes is None or nodes.empty:
+        return []
+    cols = [c for c in nodes.columns if isinstance(c, str) and c.startswith("Hierarchy -")]
+    # Keep dataframe order (already left->right in your template)
+    return cols
+
+def _pick_node_index(nodes: pd.DataFrame, filters: dict) -> int | None:
+    """Pick a node index matching filters (best-effort)."""
+    if nodes is None or nodes.empty:
+        return None
+    df = nodes
+    for k, v in filters.items():
+        if k in df.columns and v is not None and str(v).strip() != "":
+            df = df[df[k].astype(str).str.strip() == str(v).strip()]
+    if df.empty:
+        return None
+    return int(df.index[0])
+
+def render_taxonomy_architecture(nodes: pd.DataFrame) -> None:
+    st.subheader("Taxonomy architecture")
+    hcols = _hierarchy_cols(nodes)
+    if not hcols:
+        st.info("No hierarchy columns found (expected columns starting with 'Hierarchy -').")
+        return
+
+    # Simple drill-down selector (fast + robust)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        lvl1 = st.selectbox("Main category", sorted([x for x in nodes[hcols[0]].dropna().astype(str).unique() if x.strip()]), index=0)
+    df1 = nodes[nodes[hcols[0]].astype(str).str.strip() == str(lvl1).strip()]
+
+    with c2:
+        lvl2_opts = sorted([x for x in df1[hcols[1]].dropna().astype(str).unique() if x.strip()]) if len(hcols) > 1 and hcols[1] in df1.columns else []
+        lvl2 = st.selectbox("Sector", lvl2_opts, index=0) if lvl2_opts else None
+    df2 = df1
+    if lvl2 and len(hcols) > 1 and hcols[1] in df2.columns:
+        df2 = df2[df2[hcols[1]].astype(str).str.strip() == str(lvl2).strip()]
+
+    with c3:
+        lvl3_opts = sorted([x for x in df2[hcols[2]].dropna().astype(str).unique() if x.strip()]) if len(hcols) > 2 and hcols[2] in df2.columns else []
+        lvl3 = st.selectbox("Subsector", lvl3_opts, index=0) if lvl3_opts else None
+    df3 = df2
+    if lvl3 and len(hcols) > 2 and hcols[2] in df3.columns:
+        df3 = df3[df3[hcols[2]].astype(str).str.strip() == str(lvl3).strip()]
+
+    with c4:
+        lvl4_opts = sorted([x for x in df3[hcols[3]].dropna().astype(str).unique() if x.strip()]) if len(hcols) > 3 and hcols[3] in df3.columns else []
+        lvl4 = st.selectbox("Sub-sub-sector", lvl4_opts, index=0) if lvl4_opts else None
+
+    st.markdown("---")
+    st.caption("Click a node to jump the left-side node selector.")
+
+    # Show matching leaf nodes as buttons
+    df_leaf = df3.copy()
+    if lvl4 and len(hcols) > 3 and hcols[3] in df_leaf.columns:
+        df_leaf = df_leaf[df_leaf[hcols[3]].astype(str).str.strip() == str(lvl4).strip()]
+
+    if df_leaf.empty:
+        st.info("No nodes found for this selection.")
+        return
+
+    # Display buttons using display_name + path
+    for _, r in df_leaf.head(80).iterrows():
+        name = str(r.get("display_name", "")).strip()
+        path = str(r.get("path", "")).strip()
+        label = name if name else path
+        if st.button(f"{label}  ·  {path}", key=f"tax_pick_{r.name}"):
+            st.session_state["selected_idx"] = int(r.name)
+            st.rerun()
 
 
 def _to_bullets(text: str) -> str:
@@ -344,11 +417,19 @@ def main() -> None:
     )
     options = list(nodes_view.index)
 
+    # Allow other parts of the app (taxonomy architecture) to set the selection
+    if "selected_idx" not in st.session_state:
+        st.session_state["selected_idx"] = int(options[0])
+    if st.session_state["selected_idx"] not in options:
+        st.session_state["selected_idx"] = int(options[0])
+
     selected_idx = st.sidebar.selectbox(
         "Select node",
         options=options,
+        index=options.index(st.session_state["selected_idx"]),
         format_func=lambda i: labels.loc[i],
     )
+    st.session_state["selected_idx"] = int(selected_idx)
 
     node = nodes.loc[selected_idx]
 
@@ -823,17 +904,7 @@ def main() -> None:
         )
 
         with tax1:
-            st.markdown("### Taxonomy architecture")
-            st.caption("Goal: visually explore the taxonomy structure (like the v1 app).")
-            st.info(
-                "Shell only. Next: build the taxonomy map view using the hierarchy "
-                "already derived from the Nodes sheet (levels + parent/child)."
-            )
-            st.markdown(
-                "- **Inputs:** Nodes hierarchy (node_id, parent_id / path / level)\n"
-                "- **Outputs:** interactive taxonomy explorer (tree / sunburst / icicle / network)\n"
-                "- **UX:** click a node → sync selection into Node-level analysis tabs"
-            )
+            render_taxonomy_architecture(nodes)
 
         with tax2:
             st.markdown("### Custom heatmaps")
