@@ -137,9 +137,7 @@ def main() -> None:
     nodes_view = nodes
     if q.strip():
         nodes_view = nodes[
-            nodes["display_name"]
-            .astype(str)
-            .str.contains(q, case=False, na=False)
+            nodes["display_name"].astype(str).str.contains(q, case=False, na=False)
         ]
 
     if nodes_view.empty:
@@ -224,25 +222,37 @@ def main() -> None:
         ebitda = [safe_num(node.get(c)) for c in ebitda_cols]
         margin = [safe_num(node.get(c)) for c in margin_cols]
 
-        c_rev, c_ebitda, c_mgn = st.columns(3)
+        # Layout: Revenue + EBITDA side-by-side, Margin full-width beneath
+        c_rev, c_ebitda = st.columns(2)
 
         with c_rev:
             df_rev = pd.DataFrame({"Fiscal Year": year_labels, "Revenue (USD bn)": rev})
-            fig_rev = px.line(df_rev, x="Fiscal Year", y="Revenue (USD bn)", markers=True, title="Revenue (USD bn)")
+            fig_rev = px.line(
+                df_rev,
+                x="Fiscal Year",
+                y="Revenue (USD bn)",
+                markers=True,
+                title="Revenue (USD bn)",
+            )
             fig_rev.update_layout(margin=dict(l=10, r=10, t=45, b=10))
             st.plotly_chart(fig_rev, use_container_width=True)
 
         with c_ebitda:
             df_e = pd.DataFrame({"Fiscal Year": year_labels, "EBITDA (USD bn)": ebitda})
-            fig_e = px.line(df_e, x="Fiscal Year", y="EBITDA (USD bn)", markers=True, title="EBITDA (USD bn)")
+            fig_e = px.line(
+                df_e,
+                x="Fiscal Year",
+                y="EBITDA (USD bn)",
+                markers=True,
+                title="EBITDA (USD bn)",
+            )
             fig_e.update_layout(margin=dict(l=10, r=10, t=45, b=10))
             st.plotly_chart(fig_e, use_container_width=True)
 
-        with c_mgn:
-            df_m = pd.DataFrame({"Fiscal Year": year_labels, "EBITDA Margin (%)": margin})
-            fig_m = px.line(df_m, x="Fiscal Year", y="EBITDA Margin (%)", markers=True, title="EBITDA Margin (%)")
-            fig_m.update_layout(margin=dict(l=10, r=10, t=45, b=10))
-            st.plotly_chart(fig_m, use_container_width=True)
+        df_m = pd.DataFrame({"Fiscal Year": year_labels, "EBITDA Margin (%)": margin})
+        fig_m = px.line(df_m, x="Fiscal Year", y="EBITDA Margin (%)", markers=True, title="EBITDA Margin (%)")
+        fig_m.update_layout(margin=dict(l=10, r=10, t=45, b=10))
+        st.plotly_chart(fig_m, use_container_width=True)
 
         # Financial commentary belongs here (not Overview)
         fin = str(node.get("financial_commentary", "") or "").strip()
@@ -251,20 +261,37 @@ def main() -> None:
 
         # FY table underneath (all three metrics)
         st.markdown("### FY15–FY25 table")
-        table = pd.DataFrame(
+
+        # Transposed layout: years as columns (matches left→right chart flow)
+        year_cols = [f"FY{y}" for y in year_labels]  # FY2015 ... FY2025
+        table_t = pd.DataFrame(
             {
-                "Fiscal Year": year_labels,
-                "Revenue (USD bn)": rev,
-                "EBITDA (USD bn)": ebitda,
-                "EBITDA Margin (%)": margin,
+                "Metric": ["Revenue (USD bn)", "EBITDA (USD bn)", "EBITDA Margin (%)"],
+                **{year_cols[i]: [rev[i], ebitda[i], margin[i]] for i in range(len(year_cols))},
             }
         )
 
-        # Light formatting for readability (no cleverness)
-        table_fmt = table.copy()
-        table_fmt["Revenue (USD bn)"] = table_fmt["Revenue (USD bn)"].map(lambda x: "" if pd.isna(x) else f"{x:,.3f}")
-        table_fmt["EBITDA (USD bn)"] = table_fmt["EBITDA (USD bn)"].map(lambda x: "" if pd.isna(x) else f"{x:,.3f}")
-        table_fmt["EBITDA Margin (%)"] = table_fmt["EBITDA Margin (%)"].map(lambda x: "" if pd.isna(x) else f"{x:,.1f}")
+        # Light formatting for readability
+        table_fmt = table_t.copy()
+        for i, y in enumerate(year_cols):
+            try:
+                table_fmt.loc[table_fmt["Metric"] == "Revenue (USD bn)", y] = (
+                    "" if pd.isna(table_t.loc[0, y]) else f"{float(table_t.loc[0, y]):,.3f}"
+                )
+            except Exception:
+                table_fmt.loc[table_fmt["Metric"] == "Revenue (USD bn)", y] = ""
+            try:
+                table_fmt.loc[table_fmt["Metric"] == "EBITDA (USD bn)", y] = (
+                    "" if pd.isna(table_t.loc[1, y]) else f"{float(table_t.loc[1, y]):,.3f}"
+                )
+            except Exception:
+                table_fmt.loc[table_fmt["Metric"] == "EBITDA (USD bn)", y] = ""
+            try:
+                table_fmt.loc[table_fmt["Metric"] == "EBITDA Margin (%)", y] = (
+                    "" if pd.isna(table_t.loc[2, y]) else f"{float(table_t.loc[2, y]):,.1f}"
+                )
+            except Exception:
+                table_fmt.loc[table_fmt["Metric"] == "EBITDA Margin (%)", y] = ""
 
         st.dataframe(table_fmt, use_container_width=True, hide_index=True)
 
