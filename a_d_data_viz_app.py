@@ -235,6 +235,7 @@ def main() -> None:
                 x=x,
                 y=rev,
                 offsetgroup="rev",
+                marker_color="#7CC7FF",
             ),
             secondary_y=False,
         )
@@ -245,6 +246,7 @@ def main() -> None:
                 x=x,
                 y=ebitda,
                 offsetgroup="ebitda",
+                marker_color="#2E7BEF",
             ),
             secondary_y=False,
         )
@@ -255,20 +257,30 @@ def main() -> None:
                 x=x,
                 y=margin,
                 mode="lines+markers",
+                line=dict(color="#FF6B6B", width=2),
+                marker=dict(color="#FF6B6B"),
             ),
             secondary_y=True,
         )
 
         fig.update_layout(
             barmode="group",
-            title_text="Revenue, EBITDA and Margin",
+            title=dict(
+                text="Revenue, EBITDA and Margin",
+                x=0.0,
+                xanchor="left",
+                y=0.98,
+                yanchor="top",
+            ),
             margin=dict(l=10, r=10, t=55, b=10),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         )
 
-        fig.update_xaxes(title_text="Fiscal Year")
-        fig.update_yaxes(title_text="USD bn", secondary_y=False)
-        fig.update_yaxes(title_text="Margin (%)", secondary_y=True)
+        fig.update_xaxes(title_text="Fiscal Year", showgrid=False)
+
+        # Kill horizontal gridlines (and all gridlines) - cleaner for clients
+        fig.update_yaxes(title_text="USD bn", secondary_y=False, showgrid=False, zeroline=False)
+        fig.update_yaxes(title_text="Margin (%)", secondary_y=True, showgrid=False, zeroline=False)
 
         st.plotly_chart(fig, use_container_width=True)
 
