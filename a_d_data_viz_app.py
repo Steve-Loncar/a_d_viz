@@ -285,6 +285,15 @@ def humanise_column_name(col: str) -> str:
     # Fallback: prettify snake_case
     return s.replace("_", " ").strip().title()
 
+def render_node_header(node: pd.Series) -> None:
+    """Consistent header at the top of every node-level tab."""
+    name = str(node.get("display_name", "") or "").strip()
+    path = str(node.get("path", "") or "").strip()
+    if name:
+        st.header(name)
+    if path:
+        st.caption(path)
+
 def main() -> None:
     st.sidebar.header("Dataset")
 
@@ -377,8 +386,7 @@ def main() -> None:
         )
 
         with tab1:
-            st.subheader(node.get("display_name", ""))
-            st.caption(node.get("path", ""))
+            render_node_header(node)
             kpis()
 
             # Overview content (no scroll boxes)
@@ -395,8 +403,7 @@ def main() -> None:
                 render_card("Methodology", method)
 
         with tab2:
-            st.subheader(node.get("display_name", ""))
-            st.caption(node.get("path", ""))
+            render_node_header(node)
             kpis()
 
             YEARS = list(range(15, 26))  # fy15 → fy25
@@ -512,8 +519,8 @@ def main() -> None:
                 render_card("Financial commentary", fin)
 
         with tab3:
-            st.subheader("Players & Proxies")
-            st.caption(node.get("path", ""))
+            render_node_header(node)
+            st.markdown("### Players & Proxies")
 
             pid = str(node.get("node_id"))
             players = (
@@ -671,6 +678,7 @@ def main() -> None:
                 st.dataframe(pr_tbl, use_container_width=True, hide_index=True)
 
         with tab4:
+            render_node_header(node)
             st.markdown("### Supporting evidence")
 
             pid = str(node.get("node_id", "") or "")
@@ -810,7 +818,48 @@ def main() -> None:
 
     with top_tax:
         st.subheader("Overall taxonomy analysis")
-        st.info("Next: heatmaps, coverage, rankings, and cross-node comparisons.")
+        tax1, tax2, tax3 = st.tabs(
+            ["Taxonomy architecture", "Custom heatmaps", "Total heatmap"]
+        )
+
+        with tax1:
+            st.markdown("### Taxonomy architecture")
+            st.caption("Goal: visually explore the taxonomy structure (like the v1 app).")
+            st.info(
+                "Shell only. Next: build the taxonomy map view using the hierarchy "
+                "already derived from the Nodes sheet (levels + parent/child)."
+            )
+            st.markdown(
+                "- **Inputs:** Nodes hierarchy (node_id, parent_id / path / level)\n"
+                "- **Outputs:** interactive taxonomy explorer (tree / sunburst / icicle / network)\n"
+                "- **UX:** click a node → sync selection into Node-level analysis tabs"
+            )
+
+        with tax2:
+            st.markdown("### Custom heatmaps")
+            st.caption("Goal: user-defined heatmaps (like the v1 app).")
+            st.info(
+                "Shell only. Next: allow selecting a metric + FY + taxonomy depth, "
+                "then render a heatmap across nodes."
+            )
+            st.markdown(
+                "- **Inputs:** metric selector (Revenue / EBITDA / Margin), FY (15–25), node subset\n"
+                "- **Outputs:** heatmap grid (taxonomy rows/cols depending on chosen grouping)\n"
+                "- **UX:** click a cell → open that node in Node-level analysis"
+            )
+
+        with tax3:
+            st.markdown("### Total heatmap")
+            st.caption("Goal: one default 'big picture' heatmap (like the v1 app).")
+            st.info(
+                "Shell only. Next: a preconfigured heatmap view (e.g., FY25 Revenue) "
+                "over the taxonomy, with drill-down."
+            )
+            st.markdown(
+                "- **Inputs:** one canonical metric (default FY25 Revenue) + taxonomy grouping\n"
+                "- **Outputs:** full taxonomy heatmap with drilldown\n"
+                "- **UX:** simple, immediate 'wow' view for clients"
+            )
 
 
 if __name__ == "__main__":
