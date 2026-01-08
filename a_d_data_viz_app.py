@@ -15,19 +15,6 @@ from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_prox
 
 st.set_page_config(page_title="A&D Market Explorer (v2)", layout="wide")
 
-def _hierarchy_cols(nodes: pd.DataFrame) -> List[str]:
-    """Return hierarchy columns in left->right order."""
-    if nodes is None or nodes.empty:
-        return []
-    cols = [c for c in nodes.columns if isinstance(c, str) and c.startswith("Hierarchy -")]
-    if cols:
-        # Keep dataframe order (already left->right in your template)
-        return cols
-    # Fallback: we can derive hierarchy from the `path` column (preferred in v2)
-    if "path" in nodes.columns:
-        return ["__path_split__"]
-    return []
-
 def _with_path_hierarchy(nodes: pd.DataFrame) -> tuple[pd.DataFrame, List[str]]:
     """
     Create temporary hierarchy columns from `path` like:
@@ -47,6 +34,17 @@ def _with_path_hierarchy(nodes: pd.DataFrame) -> tuple[pd.DataFrame, List[str]]:
         df[col] = parts.map(lambda xs: xs[i] if i < len(xs) else "")
     return df, colnames
 
+def _node_index_for_path(nodes: pd.DataFrame, path: str) -> int | None:
+    """Return the Nodes dataframe index for an exact path match."""
+    if not path:
+        return None
+    if "path" not in nodes.columns:
+        return None
+    hit = nodes[nodes["path"].fillna("").astype(str).str.strip() == str(path).strip()]
+    if hit.empty:
+        return None
+    return int(hit.index[0])
+
 def _pick_node_index(nodes: pd.DataFrame, filters: dict) -> int | None:
     """Pick a node index matching filters (best-effort)."""
     if nodes is None or nodes.empty:
@@ -60,67 +58,84 @@ def _pick_node_index(nodes: pd.DataFrame, filters: dict) -> int | None:
     return int(df.index[0])
 
 def render_taxonomy_architecture(nodes: pd.DataFrame) -> None:
-    st.subheader("Taxonomy architecture")
-    hcols = _hierarchy_cols(nodes)
-    if not hcols:
-        st.info("No hierarchy columns found (expected columns starting with 'Hierarchy -').")
+    """
+    Full taxonomy 'map' view (like v1): wide columns, tree-like layout.
+    Uses Nodes.path (split on '>') and renders a row-per-leaf grid.
+    """
+    st.header("Taxonomy architecture")
+    st.caption("Taxonomy map (click a node to select)")
+
+    if nodes is None or nodes.empty or "path" not in nodes.columns:
+        st.info("No Nodes/path data available.")
         return
 
-    df_nodes = nodes
-    if hcols == ["__path_split__"]:
-        df_nodes, hcols = _with_path_hierarchy(nodes)
-        if not hcols:
-            st.info("No taxonomy paths found to build hierarchy.")
-            return
+    df, hcols = _with_path_hierarchy(nodes)
+    if not hcols:
+        st.info("No taxonomy paths found to build hierarchy.")
+        return
 
-    # Simple drill-down selector (fast + robust)
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        lvl1 = st.selectbox(
-            "Main category",
-            sorted([x for x in df_nodes[hcols[0]].dropna().astype(str).unique() if x.strip()]),
-            index=0,
-        )
-    df1 = df_nodes[df_nodes[hcols[0]].astype(str).str.strip() == str(lvl1).strip()]
+    # Choose depth to render: v1 was 4 levels, but we support whatever exists.
+    # Most client-friendly is 4; if more, we still render all (just more columns).
+    depth = len(hcols)
 
-    with c2:
-        lvl2_opts = sorted([x for x in df1[hcols[1]].dropna().astype(str).unique() if x.strip()]) if len(hcols) > 1 and hcols[1] in df1.columns else []
-        lvl2 = st.selectbox("Sector", lvl2_opts, index=0) if lvl2_opts else None
-    df2 = df1
-    if lvl2 and len(hcols) > 1 and hcols[1] in df2.columns:
-        df2 = df2[df2[hcols[1]].astype(str).str.strip() == str(lvl2).strip()]
+    # Build leaf rows: we treat the deepest non-empty level per path as the leaf.
+    # Row key = full path.
+    df["_full_path"] = df["path"].fillna("").astype(str).str.strip()
 
-    with c3:
-        lvl3_opts = sorted([x for x in df2[hcols[2]].dropna().astype(str).unique() if x.strip()]) if len(hcols) > 2 and hcols[2] in df2.columns else []
-        lvl3 = st.selectbox("Subsector", lvl3_opts, index=0) if lvl3_opts else None
-    df3 = df2
-    if lvl3 and len(hcols) > 2 and hcols[2] in df3.columns:
-        df3 = df3[df3[hcols[2]].astype(str).str.strip() == str(lvl3).strip()]
+    # Order rows by path to keep stable visual grouping
+    leaf_rows = (
+        df[hcols + ["_full_path"]]
+        .fillna("")
+        .astype(str)
+        .drop_duplicates(subset=["_full_path"])
+        .sort_values(by=hcols)
+        .reset_index(drop=True)
+    )
 
-    with c4:
-        lvl4_opts = sorted([x for x in df3[hcols[3]].dropna().astype(str).unique() if x.strip()]) if len(hcols) > 3 and hcols[3] in df3.columns else []
-        lvl4 = st.selectbox("Sub-sub-sector", lvl4_opts, index=0) if lvl4_opts else None
+    # Tree-like display: suppress repeated parent labels row-to-row
+    prev = [""] * depth
+
+    # Layout: slightly wider early levels
+    weights = [1.2] + [1.2] + [1.2] + [1.4]
+    if depth > 4:
+        weights = weights + [1.2] * (depth - 4)
+    cols_layout = st.columns(weights[:depth], gap="large")
+
+    # Header row (level labels)
+    for i, col in enumerate(cols_layout):
+        with col:
+            st.markdown(f"**{hcols[i].replace('H', 'Level ')}**")
 
     st.markdown("---")
-    st.caption("Click a node to jump the left-side node selector.")
 
-    # Show matching leaf nodes as buttons
-    df_leaf = df3.copy()
-    if lvl4 and len(hcols) > 3 and hcols[3] in df_leaf.columns:
-        df_leaf = df_leaf[df_leaf[hcols[3]].astype(str).str.strip() == str(lvl4).strip()]
+    # Render rows
+    for ridx, r in leaf_rows.iterrows():
+        row_cols = st.columns(weights[:depth], gap="large")
 
-    if df_leaf.empty:
-        st.info("No nodes found for this selection.")
-        return
+        for i, colname in enumerate(hcols):
+            val = str(r.get(colname, "") or "").strip()
+            show = val and (val != prev[i])
 
-    # Display buttons using display_name + path
-    for _, r in df_leaf.head(80).iterrows():
-        name = str(r.get("display_name", "")).strip()
-        path = str(r.get("path", "")).strip()
-        label = name if name else path
-        if st.button(f"{label}  ·  {path}", key=f"tax_pick_{r.name}"):
-            st.session_state["selected_idx"] = int(r.name)
-            st.rerun()
+            # Build the path up to this level for selection
+            # We reconstruct it from the row values up to i
+            segs = [str(r.get(hcols[j], "") or "").strip() for j in range(i + 1)]
+            segs = [s for s in segs if s]
+            partial_path = " > ".join(segs)
+            idx = _node_index_for_path(nodes, partial_path)
+
+            with row_cols[i]:
+                if show:
+                    label = val
+                    # Use button to match v1 UX; click jumps selection
+                    if st.button(label, key=f"taxmap_{ridx}_{i}_{partial_path}"):
+                        if idx is not None:
+                            st.session_state["selected_idx"] = int(idx)
+                            st.rerun()
+                else:
+                    # keep spacing consistent, but no repeated text
+                    st.markdown("<div style='height: 2.2rem;'></div>", unsafe_allow_html=True)
+
+        prev = [str(r.get(hcols[i], "") or "").strip() for i in range(depth)]
 
 
 def _to_bullets(text: str) -> str:
