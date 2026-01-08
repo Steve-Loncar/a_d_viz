@@ -20,8 +20,32 @@ def _hierarchy_cols(nodes: pd.DataFrame) -> List[str]:
     if nodes is None or nodes.empty:
         return []
     cols = [c for c in nodes.columns if isinstance(c, str) and c.startswith("Hierarchy -")]
-    # Keep dataframe order (already left->right in your template)
-    return cols
+    if cols:
+        # Keep dataframe order (already left->right in your template)
+        return cols
+    # Fallback: we can derive hierarchy from the `path` column (preferred in v2)
+    if "path" in nodes.columns:
+        return ["__path_split__"]
+    return []
+
+def _with_path_hierarchy(nodes: pd.DataFrame) -> tuple[pd.DataFrame, List[str]]:
+    """
+    Create temporary hierarchy columns from `path` like:
+      H1, H2, H3... (split on '>')
+    Returns (df_with_cols, colnames).
+    """
+    df = nodes.copy()
+    paths = df["path"].fillna("").astype(str)
+    parts = paths.apply(lambda s: [p.strip() for p in re.split(r"\s*>\s*", s) if p.strip()])
+    max_depth = int(parts.map(len).max()) if len(parts) else 0
+    if max_depth <= 0:
+        return df, []
+    colnames = []
+    for i in range(max_depth):
+        col = f"H{i+1}"
+        colnames.append(col)
+        df[col] = parts.map(lambda xs: xs[i] if i < len(xs) else "")
+    return df, colnames
 
 def _pick_node_index(nodes: pd.DataFrame, filters: dict) -> int | None:
     """Pick a node index matching filters (best-effort)."""
@@ -42,11 +66,22 @@ def render_taxonomy_architecture(nodes: pd.DataFrame) -> None:
         st.info("No hierarchy columns found (expected columns starting with 'Hierarchy -').")
         return
 
+    df_nodes = nodes
+    if hcols == ["__path_split__"]:
+        df_nodes, hcols = _with_path_hierarchy(nodes)
+        if not hcols:
+            st.info("No taxonomy paths found to build hierarchy.")
+            return
+
     # Simple drill-down selector (fast + robust)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        lvl1 = st.selectbox("Main category", sorted([x for x in nodes[hcols[0]].dropna().astype(str).unique() if x.strip()]), index=0)
-    df1 = nodes[nodes[hcols[0]].astype(str).str.strip() == str(lvl1).strip()]
+        lvl1 = st.selectbox(
+            "Main category",
+            sorted([x for x in df_nodes[hcols[0]].dropna().astype(str).unique() if x.strip()]),
+            index=0,
+        )
+    df1 = df_nodes[df_nodes[hcols[0]].astype(str).str.strip() == str(lvl1).strip()]
 
     with c2:
         lvl2_opts = sorted([x for x in df1[hcols[1]].dropna().astype(str).unique() if x.strip()]) if len(hcols) > 1 and hcols[1] in df1.columns else []
