@@ -15,6 +15,34 @@ from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_prox
 
 st.set_page_config(page_title="A&D Market Explorer (v2)", layout="wide")
 
+def _with_path_hierarchy_from_df(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """Derive H1..Hn columns from `path` split on '>'."""
+    out = df.copy()
+    paths = out["path"].fillna("").astype(str)
+    parts = paths.apply(lambda s: [p.strip() for p in re.split(r"\s*>\s*", s) if p.strip()])
+    max_depth = int(parts.map(len).max()) if len(parts) else 0
+    if max_depth <= 0:
+        return out, []
+    hcols = []
+    for i in range(max_depth):
+        col = f"H{i+1}"
+        hcols.append(col)
+        out[col] = parts.map(lambda xs: xs[i] if i < len(xs) else "")
+    return out, hcols
+
+def _metric_col(metric: str, year: int) -> str:
+    """
+    Map user-facing metric choice to v2 Nodes column.
+    metric: 'Revenue' | 'EBITDA' | 'Margin'
+    year: 2023/2024/2025
+    """
+    yy = str(year)[-2:]
+    if metric == "Revenue":
+        return f"segment_fy{yy}_revenue_usd_bn"
+    if metric == "EBITDA":
+        return f"segment_fy{yy}_ebitda_usd_bn"
+    return f"segment_fy{yy}_ebitda_margin_pct"
+
 def _with_path_hierarchy(nodes: pd.DataFrame) -> tuple[pd.DataFrame, List[str]]:
     """
     Create temporary hierarchy columns from `path` like:
@@ -44,6 +72,122 @@ def _node_index_for_path(nodes: pd.DataFrame, path: str) -> int | None:
     if hit.empty:
         return None
     return int(hit.index[0])
+
+def render_total_heatmap(nodes: pd.DataFrame) -> None:
+    """
+    Old-app style 'Heatmap - all':
+      - rows: leaf paths (level == max(level))
+      - cols: hierarchy levels (H1..Hn)
+      - cell value: the chosen metric value for the ancestor node at that level
+    """
+    st.subheader("Total heatmap")
+
+    if nodes is None or nodes.empty or "path" not in nodes.columns:
+        st.info("No Nodes/path data available.")
+        return
+
+    # Leaf rows only (prevents diagonal stepping; matches old app behaviour)
+    df_nodes = nodes.copy()
+    if "level" in df_nodes.columns:
+        lvl = pd.to_numeric(df_nodes["level"], errors="coerce")
+        if lvl.notna().any():
+            df_nodes = df_nodes[lvl == int(lvl.max())].copy()
+
+    # Controls (same spirit as old Heatmap-all)
+    c1, c2 = st.columns([1, 1], gap="large")
+    with c1:
+        metric = st.selectbox("Metric", ["Revenue", "EBITDA", "Margin"], index=2)
+    with c2:
+        year = st.radio("Year", [2023, 2024, 2025], index=2, horizontal=True)
+
+    col = _metric_col(metric, year)
+    if col not in nodes.columns:
+        st.warning(f"Missing column in Nodes: `{col}`")
+        return
+
+    # Build hierarchy columns from leaf paths
+    df_leaf, hcols = _with_path_hierarchy_from_df(df_nodes)
+    if not hcols:
+        st.info("No hierarchy could be derived from `path`.")
+        return
+
+    # Build a lookup from "partial path" -> metric value
+    # (we look up ancestor values from the full Nodes table, not just leaves)
+    node_lookup = (
+        nodes[["path", col]]
+        .copy()
+        .assign(path=lambda d: d["path"].fillna("").astype(str).str.strip())
+    )
+    metric_map = dict(zip(node_lookup["path"], node_lookup[col].apply(safe_num)))
+
+    # Build matrix Z: each row is a leaf path; each column is a hierarchy level
+    z = []
+    row_labels = []
+    for _, r in df_leaf.iterrows():
+        segs = [str(r.get(h, "") or "").strip() for h in hcols]
+        segs = [s for s in segs if s]
+        if not segs:
+            continue
+        row_labels.append(" > ".join(segs))
+        row_vals = []
+        for i in range(len(segs)):
+            partial = " > ".join(segs[: i + 1])
+            row_vals.append(metric_map.get(partial, np.nan))
+        # pad to full width
+        if len(row_vals) < len(hcols):
+            row_vals += [np.nan] * (len(hcols) - len(row_vals))
+        z.append(row_vals)
+
+    if not z:
+        st.info("No heatmap rows available.")
+        return
+
+    z = np.array(z, dtype=float)
+    col_labels = [f"Level {i+1}" for i in range(len(hcols))]
+
+    # Hover text (keep it simple and client-friendly)
+    hover = []
+    for i, rp in enumerate(row_labels):
+        row_hover = []
+        for j, cl in enumerate(col_labels):
+            v = z[i, j]
+            if np.isnan(v):
+                row_hover.append(f"{rp}<br>{cl}: n/a")
+            else:
+                if metric == "Margin":
+                    row_hover.append(f"{rp}<br>{cl}: {v:.1f}%")
+                else:
+                    row_hover.append(f"{rp}<br>{cl}: {v:.2f} (USD bn)")
+        hover.append(row_hover)
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z,
+            x=col_labels,
+            y=row_labels,
+            text=hover,
+            hoverinfo="text",
+            colorscale="Turbo",
+            hoverongaps=False,
+        )
+    )
+    fig.update_layout(
+        height=min(1200, 26 * len(row_labels) + 200),
+        margin=dict(l=10, r=10, t=40, b=10),
+        xaxis=dict(title="Hierarchy level"),
+        yaxis=dict(title="Leaf path"),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Download as CSV (matrix with row label + columns)
+    out = pd.DataFrame(z, columns=col_labels)
+    out.insert(0, "Leaf path", row_labels)
+    st.download_button(
+        "Download heatmap matrix (CSV)",
+        data=out.to_csv(index=False).encode("utf-8"),
+        file_name=f"total_heatmap_{metric.lower()}_{year}.csv",
+        mime="text/csv",
+    )
 
 def _pick_node_index(nodes: pd.DataFrame, filters: dict) -> int | None:
     """Pick a node index matching filters (best-effort)."""
@@ -998,17 +1142,7 @@ def main() -> None:
             )
 
         with tax3:
-            st.markdown("### Total heatmap")
-            st.caption("Goal: one default 'big picture' heatmap (like the v1 app).")
-            st.info(
-                "Shell only. Next: a preconfigured heatmap view (e.g., FY25 Revenue) "
-                "over the taxonomy, with drill-down."
-            )
-            st.markdown(
-                "- **Inputs:** one canonical metric (default FY25 Revenue) + taxonomy grouping\n"
-                "- **Outputs:** full taxonomy heatmap with drilldown\n"
-                "- **UX:** simple, immediate 'wow' view for clients"
-            )
+            render_total_heatmap(nodes)
 
 
 if __name__ == "__main__":
