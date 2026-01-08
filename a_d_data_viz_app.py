@@ -187,7 +187,7 @@ def main() -> None:
             f"{margin:,.3g}" if pd.notna(margin) else "—",
         )
 
-    tab1, tab2 = st.tabs(["Overview", "Node Dashboard"])
+    tab1, tab2 = st.tabs(["Overview", "Node Financials"])
 
     with tab1:
         st.subheader(node.get("display_name", ""))
@@ -209,45 +209,64 @@ def main() -> None:
 
     with tab2:
         st.subheader(node.get("display_name", ""))
+        st.caption(node.get("path", ""))
         kpis()
 
         YEARS = list(range(15, 26))  # fy15 → fy25
+        year_labels = [2000 + y for y in YEARS]
 
-        metric = st.radio(
-            "Metric",
-            ["Revenue", "EBITDA", "EBITDA Margin"],
-            horizontal=True,
-        )
+        # Build three series directly from the Nodes wide columns
+        rev_cols = [f"segment_fy{y}_revenue_usd_bn" for y in YEARS]
+        ebitda_cols = [f"segment_fy{y}_ebitda_usd_bn" for y in YEARS]
+        margin_cols = [f"segment_fy{y}_ebitda_margin_pct" for y in YEARS]
 
-        if metric == "Revenue":
-            cols = [f"segment_fy{y}_revenue_usd_bn" for y in YEARS]
-            y_label = "Revenue (USD bn)"
-        elif metric == "EBITDA":
-            cols = [f"segment_fy{y}_ebitda_usd_bn" for y in YEARS]
-            y_label = "EBITDA (USD bn)"
-        else:
-            cols = [f"segment_fy{y}_ebitda_margin_pct" for y in YEARS]
-            y_label = "EBITDA Margin (%)"
+        rev = [safe_num(node.get(c)) for c in rev_cols]
+        ebitda = [safe_num(node.get(c)) for c in ebitda_cols]
+        margin = [safe_num(node.get(c)) for c in margin_cols]
 
-        df = pd.DataFrame(
+        c_rev, c_ebitda, c_mgn = st.columns(3)
+
+        with c_rev:
+            df_rev = pd.DataFrame({"Fiscal Year": year_labels, "Revenue (USD bn)": rev})
+            fig_rev = px.line(df_rev, x="Fiscal Year", y="Revenue (USD bn)", markers=True, title="Revenue (USD bn)")
+            fig_rev.update_layout(margin=dict(l=10, r=10, t=45, b=10))
+            st.plotly_chart(fig_rev, use_container_width=True)
+
+        with c_ebitda:
+            df_e = pd.DataFrame({"Fiscal Year": year_labels, "EBITDA (USD bn)": ebitda})
+            fig_e = px.line(df_e, x="Fiscal Year", y="EBITDA (USD bn)", markers=True, title="EBITDA (USD bn)")
+            fig_e.update_layout(margin=dict(l=10, r=10, t=45, b=10))
+            st.plotly_chart(fig_e, use_container_width=True)
+
+        with c_mgn:
+            df_m = pd.DataFrame({"Fiscal Year": year_labels, "EBITDA Margin (%)": margin})
+            fig_m = px.line(df_m, x="Fiscal Year", y="EBITDA Margin (%)", markers=True, title="EBITDA Margin (%)")
+            fig_m.update_layout(margin=dict(l=10, r=10, t=45, b=10))
+            st.plotly_chart(fig_m, use_container_width=True)
+
+        # Financial commentary belongs here (not Overview)
+        fin = str(node.get("financial_commentary", "") or "").strip()
+        if fin:
+            render_card("Financial commentary", fin)
+
+        # FY table underneath (all three metrics)
+        st.markdown("### FY15–FY25 table")
+        table = pd.DataFrame(
             {
-                "Fiscal Year": [2000 + y for y in YEARS],
-                "Value": [safe_num(node.get(c)) for c in cols],
+                "Fiscal Year": year_labels,
+                "Revenue (USD bn)": rev,
+                "EBITDA (USD bn)": ebitda,
+                "EBITDA Margin (%)": margin,
             }
         )
 
-        fig = px.line(
-            df,
-            x="Fiscal Year",
-            y="Value",
-            markers=True,
-            title=y_label,
-        )
-        fig.update_layout(
-            margin=dict(l=10, r=10, t=40, b=10)
-        )
+        # Light formatting for readability (no cleverness)
+        table_fmt = table.copy()
+        table_fmt["Revenue (USD bn)"] = table_fmt["Revenue (USD bn)"].map(lambda x: "" if pd.isna(x) else f"{x:,.3f}")
+        table_fmt["EBITDA (USD bn)"] = table_fmt["EBITDA (USD bn)"].map(lambda x: "" if pd.isna(x) else f"{x:,.3f}")
+        table_fmt["EBITDA Margin (%)"] = table_fmt["EBITDA Margin (%)"].map(lambda x: "" if pd.isna(x) else f"{x:,.1f}")
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(table_fmt, use_container_width=True, hide_index=True)
 
         st.markdown("### Players & Proxies")
 
