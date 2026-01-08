@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 import streamlit as st
 
 import plotly.express as px
@@ -57,6 +56,8 @@ def main() -> None:
 
     wb = postprocess(wb)
     nodes = wb["Nodes"]
+    players_all = wb["Players"]
+    proxies_all = wb["Proxies"]
 
     st.title("A&D Market Explorer (v2)")
     st.caption(label)
@@ -116,34 +117,33 @@ def main() -> None:
             f"{margin:,.3g}" if pd.notna(margin) else "—",
         )
 
-    # ----------------------------
-    # Tabs
-    # ----------------------------
-        nodes = wb.get("Nodes", pd.DataFrame()).copy()
-        players = clean_players(wb.get("Players", pd.DataFrame()).copy())
-        proxies = clean_proxies(wb.get("Proxies", pd.DataFrame()).copy())
+    tab1, tab2 = st.tabs(["Overview", "Node Dashboard"])
+
+    with tab1:
         st.subheader(node.get("display_name", ""))
         st.caption(node.get("path", ""))
         kpis()
 
-    scope = str(node.get("scope_context", "") or "").strip()
-    fin = str(node.get("financial_commentary", "") or "").strip()
-    if scope:
-        st.text_area("Scope", value=scope, height=180, disabled=True)
-    if fin:
-        st.text_area(
-            "Financial commentary",
-            value=fin,
-            height=180,
-            disabled=True,
-        )
-    if method:
-        st.text_area(
-            "Methodology",
-            value=method,
-            height=180,
-            disabled=True,
-        )
+        scope = str(node.get("scope_context", "") or "").strip()
+        fin = str(node.get("financial_commentary", "") or "").strip()
+        method = str(node.get("methodology_summary", "") or "").strip()
+
+        if scope:
+            st.text_area("Scope", value=scope, height=180, disabled=True)
+        if fin:
+            st.text_area(
+                "Financial commentary",
+                value=fin,
+                height=180,
+                disabled=True,
+            )
+        if method:
+            st.text_area(
+                "Methodology",
+                value=method,
+                height=180,
+                disabled=True,
+            )
 
     with tab2:
         st.subheader(node.get("display_name", ""))
@@ -189,17 +189,17 @@ def main() -> None:
 
         st.markdown("### Players & Proxies")
 
-        # Use already cleaned DataFrames from main()
         pid = str(node.get("node_id"))
-        if not players_all.empty and "node_id" in players_all.columns:
-            p = players_all[players_all["node_id"].astype(str) == pid].copy()
-        else:
-            p = pd.DataFrame()
-
-        if not proxies_all.empty and "node_id" in proxies_all.columns:
-            pr = proxies_all[proxies_all["node_id"].astype(str) == pid].copy()
-        else:
-            pr = pd.DataFrame()
+        p = (
+            players_all[players_all["node_id"].astype(str) == pid].copy()
+            if (not players_all.empty and "node_id" in players_all.columns)
+            else pd.DataFrame()
+        )
+        pr = (
+            proxies_all[proxies_all["node_id"].astype(str) == pid].copy()
+            if (not proxies_all.empty and "node_id" in proxies_all.columns)
+            else pd.DataFrame()
+        )
 
         c1, c2 = st.columns(2)
 
@@ -208,12 +208,8 @@ def main() -> None:
             if p.empty:
                 st.caption("No player rows for this node yet.")
             else:
-                # Prefer sorted by rank if available
-                if "rank" in p.columns:
-                    p = p.sort_values("rank", ascending=True)
-
-                # Keep to the most useful columns if present
-                wanted = [
+                p = p.sort_values("rank", ascending=True)
+                cols = [
                     "rank",
                     "name",
                     "country",
@@ -224,7 +220,7 @@ def main() -> None:
                     "confidence_score",
                     "attribution_basis",
                 ]
-                cols = [c for c in wanted if c in p.columns]
+                cols = [c for c in cols if c in p.columns]
                 st.dataframe(p[cols].head(10), use_container_width=True, hide_index=True)
 
         with c2:
@@ -232,18 +228,17 @@ def main() -> None:
             if pr.empty:
                 st.caption("No proxy rows for this node yet.")
             else:
-                wanted = [
-                    "rank",
+                cols = [
                     "name",
                     "country",
+                    "type",
                     "proxy_reason",
                     "proxy_fy25_revenue_usd_bn",
                     "proxy_fy25_ebitda_usd_bn",
                     "proxy_fy25_ebitda_margin_pct",
                     "confidence_score",
                 ]
-                cols = [c for c in wanted if c in pr.columns]
-                # Some sheets may not have rank; show first N
+                cols = [c for c in cols if c in pr.columns]
                 if "rank" in pr.columns:
                     pr = pr.sort_values("rank", ascending=True)
                 st.dataframe(pr[cols].head(10), use_container_width=True, hide_index=True)
