@@ -1,5 +1,6 @@
 import pandas as pd
 import math
+import numpy as _np  # optional; if you dislike numpy, we can remove and do pure python percentile
 import re
 import streamlit as st
 import textwrap
@@ -244,6 +245,69 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
     z = [[float(v) if v is not None else float("nan") for v in row] for row in z]
     col_labels = [f"Level {i+1}" for i in range(len(hcols))]
 
+    # -----------------------------
+    # Color scale controls (client-proof)
+    # -----------------------------
+    # Flatten values ignoring NaN
+    flat = []
+    for row in z:
+        for v in row:
+            if isinstance(v, float) and math.isnan(v):
+                continue
+            flat.append(float(v))
+
+    if not flat:
+        st.info("No numeric values available for heatmap.")
+        return
+
+    # Default range: robust percentiles to avoid one outlier turning everything red
+    # (common approach used in dashboards)
+    try:
+        p5 = float(_np.percentile(flat, 5))
+        p95 = float(_np.percentile(flat, 95))
+    except Exception:
+        # fallback if percentile calc fails
+        p5 = min(flat)
+        p95 = max(flat)
+
+    default_min = p5
+    default_max = p95
+
+    # For growth metrics, a symmetric scale around 0 is usually more interpretable
+    is_growth = ("Growth" in metric_choice)
+    if is_growth:
+        M = max(abs(default_min), abs(default_max))
+        default_min, default_max = -M, M
+
+    with st.expander("Colour scale", expanded=False):
+        c1, c2, c3 = st.columns([1.2, 1.2, 1.0], gap="large")
+        with c1:
+            robust = st.checkbox("Robust scale (clip to 5th–95th percentile)", value=True)
+        with c2:
+            symmetric = st.checkbox("Symmetric around 0", value=is_growth, disabled=not is_growth)
+        with c3:
+            st.caption("Tip: use robust + symmetric for growth metrics.")
+
+        # If user disables robust, use full min/max
+        if not robust:
+            default_min = float(min(flat))
+            default_max = float(max(flat))
+            if is_growth and symmetric:
+                M = max(abs(default_min), abs(default_max))
+                default_min, default_max = -M, M
+
+        zmin = st.number_input("Colour min", value=float(default_min))
+        zmax = st.number_input("Colour max", value=float(default_max))
+
+        # enforce sane ordering
+        if zmin >= zmax:
+            st.warning("Colour min must be less than colour max. Using defaults.")
+            zmin, zmax = float(default_min), float(default_max)
+
+        if is_growth and symmetric:
+            M = max(abs(zmin), abs(zmax))
+            zmin, zmax = -M, M
+
     # Hover text (keep it simple and client-friendly)
     hover = []
     for i, rp in enumerate(row_labels):
@@ -267,6 +331,8 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
             text=hover,
             hoverinfo="text",
             colorscale="Turbo",
+            zmin=zmin,
+            zmax=zmax,
             hoverongaps=False,
         )
     )
