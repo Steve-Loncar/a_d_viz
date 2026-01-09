@@ -132,10 +132,10 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
         row_vals = []
         for i in range(len(segs)):
             partial = " > ".join(segs[: i + 1])
-            row_vals.append(metric_map.get(partial, np.nan))
+            row_vals.append(metric_map.get(partial, float("nan")))
         # pad to full width
         if len(row_vals) < len(hcols):
-            row_vals += [np.nan] * (len(hcols) - len(row_vals))
+            row_vals += [float("nan")] * (len(hcols) - len(row_vals))
         z.append(row_vals)
 
     if not z:
