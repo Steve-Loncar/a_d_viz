@@ -1,5 +1,6 @@
 import pandas as pd
 import math
+import re
 import streamlit as st
 import textwrap
 from typing import List
@@ -42,6 +43,23 @@ def _metric_col(metric: str, year: int) -> str:
     if metric == "EBITDA":
         return f"segment_fy{yy}_ebitda_usd_bn"
     return f"segment_fy{yy}_ebitda_margin_pct"
+
+def _path_parts(path: str) -> list[str]:
+    return [p.strip() for p in re.split(r"\s*>\s*", str(path or "")) if p.strip()]
+
+def _lookup_with_fallback(metric_map: dict[str, float], path: str) -> float:
+    """
+    Old-app style fallback: if an ancestor node isn't present in Nodes,
+    walk up until you find a value.
+    """
+    parts = _path_parts(path)
+    while parts:
+        key = " > ".join(parts)
+        v = metric_map.get(key, None)
+        if v is not None:
+            return v
+        parts = parts[:-1]
+    return float("nan")
 
 def _with_path_hierarchy(nodes: pd.DataFrame) -> tuple[pd.DataFrame, List[str]]:
     """
@@ -105,8 +123,14 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
         st.warning(f"Missing column in Nodes: `{col}`")
         return
 
+    # Leaf rows only (robust): use max depth from `path` not `level`
+    df_nodes = nodes.copy()
+    depths = df_nodes["path"].fillna("").astype(str).map(lambda p: len(_path_parts(p)))
+    max_depth = int(depths.max()) if len(depths) else 0
+    df_leaf_base = df_nodes[depths == max_depth].copy()
+
     # Build hierarchy columns from leaf paths
-    df_leaf, hcols = _with_path_hierarchy_from_df(df_nodes)
+    df_leaf, hcols = _with_path_hierarchy_from_df(df_leaf_base)
     if not hcols:
         st.info("No hierarchy could be derived from `path`.")
         return
@@ -132,7 +156,7 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
         row_vals = []
         for i in range(len(segs)):
             partial = " > ".join(segs[: i + 1])
-            row_vals.append(metric_map.get(partial, float("nan")))
+            row_vals.append(_lookup_with_fallback(metric_map, partial))
         # pad to full width
         if len(row_vals) < len(hcols):
             row_vals += [float("nan")] * (len(hcols) - len(row_vals))
@@ -142,7 +166,8 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
         st.info("No heatmap rows available.")
         return
 
-    z = np.array(z, dtype=float)
+    # Plotly accepts list-of-lists; avoid numpy entirely
+    z = [[float(v) if v is not None else float("nan") for v in row] for row in z]
     col_labels = [f"Level {i+1}" for i in range(len(hcols))]
 
     # Hover text (keep it simple and client-friendly)
@@ -150,8 +175,8 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
     for i, rp in enumerate(row_labels):
         row_hover = []
         for j, cl in enumerate(col_labels):
-            v = z[i, j]
-            if np.isnan(v):
+            v = z[i][j]
+            if (isinstance(v, float) and math.isnan(v)):
                 row_hover.append(f"{rp}<br>{cl}: n/a")
             else:
                 if metric == "Margin":
