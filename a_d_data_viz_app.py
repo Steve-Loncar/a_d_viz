@@ -31,6 +31,26 @@ def _with_path_hierarchy_from_df(df: pd.DataFrame) -> tuple[pd.DataFrame, list[s
         out[col] = parts.map(lambda xs: xs[i] if i < len(xs) else "")
     return out, hcols
 
+def _pct_growth(v0: float, v1: float) -> float:
+    """
+    Simple % growth from v0 to v1.
+    Returns NaN if baseline is missing/zero.
+    """
+    try:
+        if v0 is None or v1 is None:
+            return float("nan")
+        if isinstance(v0, float) and math.isnan(v0):
+            return float("nan")
+        if isinstance(v1, float) and math.isnan(v1):
+            return float("nan")
+        v0 = float(v0)
+        v1 = float(v1)
+        if v0 == 0.0:
+            return float("nan")
+        return (v1 / v0 - 1.0) * 100.0
+    except Exception:
+        return float("nan")
+
 def _metric_col(metric: str, year: int) -> str:
     """
     Map user-facing metric choice to v2 Nodes column.
@@ -111,17 +131,80 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
         if lvl.notna().any():
             df_nodes = df_nodes[lvl == int(lvl.max())].copy()
 
-    # Controls (same spirit as old Heatmap-all)
-    c1, c2 = st.columns([1, 1], gap="large")
-    with c1:
-        metric = st.selectbox("Metric", ["Revenue", "EBITDA", "Margin"], index=2)
-    with c2:
-        year = st.radio("Year", [2023, 2024, 2025], index=2, horizontal=True)
+    # Controls (match v1 intent, but use the new required options)
+    metric_choice = st.selectbox(
+        "Metric",
+        [
+            "Margin (FY23)",
+            "Margin (FY24)",
+            "Margin (FY25)",
+            "Revenue Growth FY22–FY25",
+            "EBITDA Growth FY22–FY25",
+        ],
+        index=2,  # default = Margin (FY25)
+    )
 
-    col = _metric_col(metric, year)
-    if col not in nodes.columns:
-        st.warning(f"Missing column in Nodes: `{col}`")
-        return
+    # Resolve choice to either a direct column or a derived series
+    metric_kind = "margin"
+    fmt_kind = "pct"  # pct | usd
+    value_col = None
+
+    if metric_choice.startswith("Margin"):
+        metric_kind = "margin"
+        fmt_kind = "pct"
+        if "FY23" in metric_choice:
+            value_col = "segment_fy23_ebitda_margin_pct"
+        elif "FY24" in metric_choice:
+            value_col = "segment_fy24_ebitda_margin_pct"
+        else:
+            value_col = "segment_fy25_ebitda_margin_pct"
+
+        if value_col not in nodes.columns:
+            st.warning(f"Missing column in Nodes: `{value_col}`")
+            return
+
+        # Build lookup from Nodes.path -> value
+        node_lookup = (
+            nodes[["path", value_col]]
+            .copy()
+            .assign(path=lambda d: d["path"].fillna("").astype(str).str.strip())
+        )
+        metric_map = dict(zip(node_lookup["path"], node_lookup[value_col].apply(safe_num)))
+
+    elif metric_choice.startswith("Revenue Growth"):
+        metric_kind = "rev_growth"
+        fmt_kind = "pct"
+        c0 = "segment_fy22_revenue_usd_bn"
+        c1 = "segment_fy25_revenue_usd_bn"
+        missing = [c for c in (c0, c1) if c not in nodes.columns]
+        if missing:
+            st.warning(f"Missing column(s) in Nodes: {', '.join(f'`{m}`' for m in missing)}")
+            return
+
+        # Build lookup from Nodes.path -> derived growth %
+        base = nodes[["path", c0, c1]].copy()
+        base["path"] = base["path"].fillna("").astype(str).str.strip()
+        base[c0] = base[c0].apply(safe_num)
+        base[c1] = base[c1].apply(safe_num)
+        base["__val__"] = base.apply(lambda r: _pct_growth(r[c0], r[c1]), axis=1)
+        metric_map = dict(zip(base["path"], base["__val__"]))
+
+    else:  # EBITDA Growth FY22–FY25
+        metric_kind = "ebitda_growth"
+        fmt_kind = "pct"
+        c0 = "segment_fy22_ebitda_usd_bn"
+        c1 = "segment_fy25_ebitda_usd_bn"
+        missing = [c for c in (c0, c1) if c not in nodes.columns]
+        if missing:
+            st.warning(f"Missing column(s) in Nodes: {', '.join(f'`{m}`' for m in missing)}")
+            return
+
+        base = nodes[["path", c0, c1]].copy()
+        base["path"] = base["path"].fillna("").astype(str).str.strip()
+        base[c0] = base[c0].apply(safe_num)
+        base[c1] = base[c1].apply(safe_num)
+        base["__val__"] = base.apply(lambda r: _pct_growth(r[c0], r[c1]), axis=1)
+        metric_map = dict(zip(base["path"], base["__val__"]))
 
     # Leaf rows only (robust): use max depth from `path` not `level`
     df_nodes = nodes.copy()
@@ -134,15 +217,6 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
     if not hcols:
         st.info("No hierarchy could be derived from `path`.")
         return
-
-    # Build a lookup from "partial path" -> metric value
-    # (we look up ancestor values from the full Nodes table, not just leaves)
-    node_lookup = (
-        nodes[["path", col]]
-        .copy()
-        .assign(path=lambda d: d["path"].fillna("").astype(str).str.strip())
-    )
-    metric_map = dict(zip(node_lookup["path"], node_lookup[col].apply(safe_num)))
 
     # Build matrix Z: each row is a leaf path; each column is a hierarchy level
     z = []
@@ -179,7 +253,7 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
             if (isinstance(v, float) and math.isnan(v)):
                 row_hover.append(f"{rp}<br>{cl}: n/a")
             else:
-                if metric == "Margin":
+                if fmt_kind == "pct":
                     row_hover.append(f"{rp}<br>{cl}: {v:.1f}%")
                 else:
                     row_hover.append(f"{rp}<br>{cl}: {v:.2f} (USD bn)")
@@ -210,7 +284,7 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
     st.download_button(
         "Download heatmap matrix (CSV)",
         data=out.to_csv(index=False).encode("utf-8"),
-        file_name=f"total_heatmap_{metric.lower()}_{year}.csv",
+        file_name=f"total_heatmap_{metric_choice.lower().replace(' ', '_').replace('–','-')}.csv",
         mime="text/csv",
     )
 
