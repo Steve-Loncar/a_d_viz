@@ -1,6 +1,6 @@
 import pandas as pd
 import math
-import numpy as _np  # optional; if you dislike numpy, we can remove and do pure python percentile
+import numpy as np
 import re
 import streamlit as st
 import textwrap
@@ -16,6 +16,65 @@ from lib.loader import load_workbook_bytes, load_workbook_path
 from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_proxies
 
 st.set_page_config(page_title="A&D Market Explorer (v2)", layout="wide")
+
+# Muted red → amber → green (dark-mode friendly)
+MUTED_RAG = [[0.0,"#7f1d1d"],[0.25,"#9a3412"],[0.5,"#a16207"],[0.75,"#166534"],[1.0,"#14532d"]]
+
+def _norm(s: str) -> str:
+    return " ".join(str(s or "").strip().lower().split())
+
+def _first_present(df: pd.DataFrame, cols: list[str]) -> str | None:
+    for c in cols:
+        if c in df.columns:
+            return c
+    return None
+
+def _metric_map_for_custom_heatmaps(nodes: pd.DataFrame) -> dict[str, dict]:
+    """
+    Maps UI labels -> how to compute value for a node-row.
+    Uses your structured columns. We do not try to infer; we use known columns.
+    """
+    # Adjust these *once* if your column names differ.
+    return {
+        "Margin (FY23)":  {"kind": "col", "col": "fy23_ebitda_margin_pct"},
+        "Margin (FY24)":  {"kind": "col", "col": "fy24_ebitda_margin_pct"},
+        "Margin (FY25)":  {"kind": "col", "col": "fy25_ebitda_margin_pct"},
+        "Revenue Growth 22–25": {"kind": "growth", "start": "fy22_revenue_usd_bn", "end": "fy25_revenue_usd_bn", "mode": "pct"},
+        "EBITDA Growth 22–25":  {"kind": "growth", "start": "fy22_ebitda_usd_bn",  "end": "fy25_ebitda_usd_bn",  "mode": "pct"},
+        # (Optional extras if you want parity with old app checkboxes)
+        "Revenue (FY23)": {"kind": "col", "col": "fy23_revenue_usd_bn"},
+        "Revenue (FY24)": {"kind": "col", "col": "fy24_revenue_usd_bn"},
+        "Revenue (FY25)": {"kind": "col", "col": "fy25_revenue_usd_bn"},
+        "EBITDA (FY23)":  {"kind": "col", "col": "fy23_ebitda_usd_bn"},
+        "EBITDA (FY24)":  {"kind": "col", "col": "fy24_ebitda_usd_bn"},
+        "EBITDA (FY25)":  {"kind": "col", "col": "fy25_ebitda_usd_bn"},
+    }
+
+def _value_for_node(row: pd.Series, spec: dict) -> float | None:
+    kind = spec.get("kind")
+    if kind == "col":
+        col = spec.get("col")
+        v = row.get(col, None)
+        try:
+            if v is None or (isinstance(v, float) and math.isnan(v)):
+                return None
+            return float(v)
+        except Exception:
+            return None
+    if kind == "growth":
+        s = row.get(spec.get("start"), None)
+        e = row.get(spec.get("end"), None)
+        try:
+            s = float(s)
+            e = float(e)
+        except Exception:
+            return None
+        if spec.get("mode") == "pct":
+            if s == 0:
+                return None
+            return (e / s - 1.0) * 100.0
+        return e - s
+    return None
 
 def _with_path_hierarchy_from_df(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     """Derive H1..Hn columns from `path` split on '>'."""
@@ -111,6 +170,179 @@ def _node_index_for_path(nodes: pd.DataFrame, path: str) -> int | None:
     if hit.empty:
         return None
     return int(hit.index[0])
+
+def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
+    """
+    Old-app methodology:
+    - pick rows (taxonomy nodes) via checkboxes
+    - pick metric columns (curated list)
+    - generate heatmap
+    """
+    st.subheader("Custom heatmaps")
+
+    if nodes is None or nodes.empty:
+        st.info("No nodes loaded.")
+        return
+
+    # Identify hierarchy columns to build a display path
+    hierarchy_cols = [c for c in nodes.columns if _norm(c).startswith("hierarchy")]
+    if not hierarchy_cols:
+        # Fallback to common ones if your dataset uses fixed names
+        hierarchy_cols = [c for c in ["Level 1", "Level 2", "Level 3", "Level 4"] if c in nodes.columns]
+
+    if not hierarchy_cols:
+        st.warning("No hierarchy columns found for building taxonomy paths.")
+        return
+
+    def path_for_row(r: pd.Series) -> str:
+        parts = []
+        for c in hierarchy_cols:
+            v = str(r.get(c, "")).strip()
+            if v and v.lower() != "nan":
+                parts.append(v)
+        return " > ".join(parts)
+
+    nodes = nodes.copy()
+    nodes["__path"] = nodes.apply(path_for_row, axis=1)
+    nodes = nodes[nodes["__path"].astype(str).str.len() > 0]
+    all_paths = nodes["__path"].dropna().astype(str).unique().tolist()
+    all_paths.sort()
+
+    metric_specs = _metric_map_for_custom_heatmaps(nodes)
+    metric_choices = [
+        "Margin (FY23)",
+        "Margin (FY24)",
+        "Margin (FY25)",
+        "Revenue Growth 22–25",
+        "EBITDA Growth 22–25",
+    ]
+
+    # Controls (same *structure* as old app)
+    left, right = st.columns([1.2, 1.0], gap="large")
+
+    with left:
+        st.markdown("#### Select rows (taxonomy nodes)")
+        q = st.text_input("Filter rows", value="", placeholder="Type to filter (e.g. Satellite, Flight Deck)")
+        filtered = [p for p in all_paths if (q.strip().lower() in p.lower())] if q.strip() else all_paths
+
+        # Old app pattern: checkbox grid
+        selected = []
+        cols = st.columns(3, gap="small")
+        for i, p in enumerate(filtered[:450]):  # hard cap so UI doesn't explode
+            with cols[i % 3]:
+                if st.checkbox(p, key=f"chm_row_{i}_{hash(p)}", value=False):
+                    selected.append(p)
+
+        if len(filtered) > 450:
+            st.caption(f"Showing first 450 matches (filtered from {len(filtered)}). Refine filter to see others.")
+
+    with right:
+        st.markdown("#### Select metric (columns)")
+        metric = st.selectbox("Metric", metric_choices, index=2)  # default Margin FY25
+
+        st.markdown("#### Colour scale")
+        robust = st.checkbox("Robust scale (clip to 5th–95th percentile)", value=True)
+        is_growth = "Growth" in metric
+        symmetric = st.checkbox("Symmetric around 0", value=is_growth, disabled=not is_growth)
+
+    st.divider()
+
+    if st.button("Generate heatmap", type="primary"):
+        if not selected:
+            st.warning("Select at least one taxonomy row.")
+            return
+
+        # Build matrix: rows = selected paths, cols = hierarchy levels (or just one column per metric)
+        # For custom heatmaps in old app: columns were chosen metrics. Here we're doing a single chosen metric across levels (same as Total heatmap),
+        # BUT constrained to the selected rows only (this is the "custom" part).
+        #
+        # If you prefer "selected rows × multiple metrics columns", tell me and we'll flip to that (also exactly like old app).
+
+        spec = metric_specs.get(metric)
+        if not spec:
+            st.warning("Metric not configured.")
+            return
+
+        # Map each path to the corresponding node row (leaf) and its ancestors by level
+        # We do this by matching the hierarchy labels by position.
+        z = []
+        y_labels = []
+
+        # Build quick lookup keyed by full path for leaf row
+        leaf_lookup = {str(r["__path"]): r for _, r in nodes.iterrows()}
+
+        for p in selected:
+            leaf = leaf_lookup.get(p)
+            if leaf is None:
+                continue
+            row_vals = []
+            parts = [x.strip() for x in p.split(">")]
+            parts = [x.strip() for x in p.split(" > ")]
+            # For each level column, build a partial path and lookup that node's metric
+            for lvl_idx in range(len(hierarchy_cols)):
+                partial = " > ".join(parts[: lvl_idx + 1])
+                rr = leaf_lookup.get(partial)
+                v = _value_for_node(rr, spec) if rr is not None else None
+                row_vals.append(v if v is not None else np.nan)
+            z.append(row_vals)
+            y_labels.append(p)
+
+        if not z:
+            st.warning("No values found for the selected rows.")
+            return
+
+        # Flatten for scale defaults
+        flat = [float(v) for row in z for v in row if not (isinstance(v, float) and math.isnan(v))]
+        if not flat:
+            st.warning("No numeric values available.")
+            return
+
+        # Default min/max
+        if robust:
+            zmin = float(np.percentile(flat, 5))
+            zmax = float(np.percentile(flat, 95))
+        else:
+            zmin, zmax = float(min(flat)), float(max(flat))
+        if symmetric:
+            M = max(abs(zmin), abs(zmax))
+            zmin, zmax = -M, M
+
+        # Allow user override (same as Total heatmap)
+        c1, c2 = st.columns(2)
+        with c1:
+            zmin_ui = st.number_input("Colour min", value=float(zmin), key="chm_zmin")
+        with c2:
+            zmax_ui = st.number_input("Colour max", value=float(zmax), key="chm_zmax")
+        if zmin_ui < zmax_ui:
+            zmin, zmax = float(zmin_ui), float(zmax_ui)
+
+        fig = go.Figure(
+            data=go.Heatmap(
+                z=z,
+                x=[f"Level {i+1}" for i in range(len(hierarchy_cols))],
+                y=y_labels,
+                colorscale=MUTED_RAG,
+                zmin=zmin,
+                zmax=zmax,
+                hoverongaps=False,
+                hoverinfo="text",
+                text=[[f"{metric}<br>{y_labels[i]}<br>Level {j+1}: {z[i][j]:.2f}" if not (isinstance(z[i][j], float) and math.isnan(z[i][j])) else
+                      f"{metric}<br>{y_labels[i]}<br>Level {j+1}: (no data)"
+                      for j in range(len(hierarchy_cols))]
+                     for i in range(len(y_labels))],
+            )
+        )
+        fig.update_layout(
+            height=min(1100, 24 * len(y_labels) + 240),
+            margin=dict(l=10, r=10, t=50, b=10),
+            title=f"Custom heatmap — {metric}",
+            hoverlabel=dict(
+                bgcolor="rgba(15, 23, 42, 0.95)",
+                bordercolor="rgba(148, 163, 184, 0.35)",
+                font=dict(color="rgba(226, 232, 240, 1.0)", size=13),
+            ),
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 def render_total_heatmap(nodes: pd.DataFrame) -> None:
     """
@@ -263,8 +495,8 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
     # Default range: robust percentiles to avoid one outlier turning everything red
     # (common approach used in dashboards)
     try:
-        p5 = float(_np.percentile(flat, 5))
-        p95 = float(_np.percentile(flat, 95))
+        p5 = float(np.percentile(flat, 5))
+        p95 = float(np.percentile(flat, 95))
     except Exception:
         # fallback if percentile calc fails
         p5 = min(flat)
@@ -343,6 +575,14 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
         )
     )
     fig.update_layout(
+        hoverlabel=dict(
+            bgcolor="rgba(15, 23, 42, 0.95)",  # dark slate, slightly transparent
+            bordercolor="rgba(148, 163, 184, 0.35)",
+            font=dict(
+                color="rgba(226, 232, 240, 1.0)",  # light text
+                size=13,
+            ),
+        ),
         height=min(1200, 26 * len(row_labels) + 200),
         margin=dict(l=10, r=10, t=40, b=10),
         xaxis=dict(title="Hierarchy level"),
@@ -1300,17 +1540,7 @@ def main() -> None:
             render_taxonomy_architecture(nodes)
 
         with tax2:
-            st.markdown("### Custom heatmaps")
-            st.caption("Goal: user-defined heatmaps (like the v1 app).")
-            st.info(
-                "Shell only. Next: allow selecting a metric + FY + taxonomy depth, "
-                "then render a heatmap across nodes."
-            )
-            st.markdown(
-                "- **Inputs:** metric selector (Revenue / EBITDA / Margin), FY (15–25), node subset\n"
-                "- **Outputs:** heatmap grid (taxonomy rows/cols depending on chosen grouping)\n"
-                "- **UX:** click a cell → open that node in Node-level analysis"
-            )
+            render_custom_heatmaps(nodes)
 
         with tax3:
             render_total_heatmap(nodes)
