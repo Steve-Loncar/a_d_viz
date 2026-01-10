@@ -183,40 +183,68 @@ def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
     paths = [p for p in nodes["path"].dropna().unique().tolist() if p.strip()]
     paths.sort()
 
-    left, right = st.columns([1.35, 1.0], gap="large")
+    # ---------
+    # Compact "old app" layout: controls left, heatmap right (hero)
+    # ---------
+    controls, viz = st.columns([0.85, 2.15], gap="large")
 
-    with left:
-        st.markdown("#### Select rows")
-        q = st.text_input("Filter rows", value="", placeholder="Type to filter rows (e.g. Satellite, Flight Deck)")
-        filtered = [p for p in paths if q.strip().lower() in p.lower()] if q.strip() else paths
+    with controls:
+        st.markdown("### Controls")
 
-        selected_rows = []
-        grid = st.columns(3, gap="small")
-        show = filtered[:450]  # cap for UX
-        for i, p in enumerate(show):
-            with grid[i % 3]:
-                if st.checkbox(p, key=f"chm_row_{hash(p)}"):
-                    selected_rows.append(p)
-        if len(filtered) > 450:
-            st.caption(f"Showing first 450 matches (filtered from {len(filtered)}). Refine the filter to see others.")
+        # Make the button obvious and near the top (people kept missing it)
+        generate = st.button("Generate heatmap", type="primary", use_container_width=True)
 
-    with right:
-        st.markdown("#### Select columns (metrics)")
+        st.markdown("#### Metrics (columns)")
         metric_options = list(CUSTOM_HEATMAP_METRICS.keys())
         default_cols = ["Margin (FY25)", "Revenue Growth 22–25", "EBITDA Growth 22–25"]
         selected_metrics = st.multiselect(
-            "Metrics",
+            "Select metrics",
             options=metric_options,
             default=[m for m in default_cols if m in metric_options],
         )
 
+        st.markdown("#### Rows (taxonomy nodes)")
+        q = st.text_input("Search", value="", placeholder="e.g. Satellite, Flight Deck")
+        filtered = [p for p in paths if q.strip().lower() in p.lower()] if q.strip() else paths
+
+        # Keep selection compact: multiselect rather than massive checkbox grid
+        max_show = st.slider("Show top results", min_value=25, max_value=400, value=120, step=25)
+        show = filtered[:max_show]
+
+        # Persist selection in session state (old app behaviour)
+        if "custom_hm_rows" not in st.session_state:
+            st.session_state.custom_hm_rows = []
+
+        # Quick actions
+        b1, b2 = st.columns(2, gap="small")
+        with b1:
+            if st.button("Add filtered", use_container_width=True):
+                merged = list(dict.fromkeys(st.session_state.custom_hm_rows + show))
+                st.session_state.custom_hm_rows = merged
+        with b2:
+            if st.button("Clear", use_container_width=True):
+                st.session_state.custom_hm_rows = []
+
+        with st.expander("Select rows", expanded=False):
+            st.session_state.custom_hm_rows = st.multiselect(
+                "Selected rows",
+                options=show,
+                default=[r for r in st.session_state.custom_hm_rows if r in show] or st.session_state.custom_hm_rows,
+            )
+
+        selected_rows = st.session_state.custom_hm_rows
+        st.caption(f"Selected rows: **{len(selected_rows)}**")
+
         st.markdown("#### Colour scale")
-        robust = st.checkbox("Robust scale (clip to 5th–95th percentile)", value=True)
-        symmetric = st.checkbox("Symmetric around 0 (useful for growth %)", value=True)
+        robust = st.checkbox("Robust scale (clip 5th–95th percentile)", value=True)
+        symmetric = st.checkbox("Symmetric around 0", value=True)
 
-    st.divider()
+    with viz:
+        st.markdown("### Heatmap")
+        st.caption("Tip: choose metrics + rows on the left, then click **Generate heatmap**.")
 
-    if st.button("Generate heatmap", type="primary"):
+    # Only build chart when user clicks Generate (or if already generated once and we want it to persist)
+    if generate:
         if not selected_rows:
             st.warning("Select at least one row.")
             return
@@ -268,11 +296,13 @@ def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
             M = max(abs(zmin), abs(zmax))
             zmin, zmax = -M, M
 
-        c1, c2 = st.columns(2)
-        with c1:
-            zmin_ui = st.number_input("Colour min", value=float(zmin), key="chm_zmin")
-        with c2:
-            zmax_ui = st.number_input("Colour max", value=float(zmax), key="chm_zmax")
+        # Put min/max controls ABOVE the heatmap, but in the viz column so it doesn't clutter controls
+        with viz:
+            c1, c2 = st.columns(2)
+            with c1:
+                zmin_ui = st.number_input("Colour min", value=float(zmin), key="chm_zmin")
+            with c2:
+                zmax_ui = st.number_input("Colour max", value=float(zmax), key="chm_zmax")
         if zmin_ui < zmax_ui:
             zmin, zmax = float(zmin_ui), float(zmax_ui)
 
@@ -300,7 +330,8 @@ def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
                 font=dict(color="rgba(226, 232, 240, 1.0)", size=13),
             ),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        with viz:
+            st.plotly_chart(fig, use_container_width=True)
 
 def render_total_heatmap(nodes: pd.DataFrame) -> None:
     """
