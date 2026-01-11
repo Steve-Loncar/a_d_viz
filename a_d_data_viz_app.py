@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import io
 import math
 import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+
+try:
+    from docx import Document
+    from docx.shared import Pt
+except Exception:
+    Document = None  # handled at runtime
+    Pt = None
 
 # Muted red → amber → green (dark-mode friendly)
 MUTED_RAG = [
@@ -189,6 +197,282 @@ def _node_index_for_path(nodes: pd.DataFrame, path: str) -> int | None:
     if hit.empty:
         return None
     return int(hit.index[0])
+
+def _doc_add_heading(doc: "Document", text: str, level: int = 1) -> None:
+    doc.add_heading(text, level=level)
+
+def _doc_add_bullets(doc: "Document", lines: list[str]) -> None:
+    for ln in [l.strip() for l in lines if str(l).strip()]:
+        p = doc.add_paragraph(ln, style="List Bullet")
+        for run in p.runs:
+            run.font.size = Pt(10) if Pt else None
+
+def _doc_add_para(doc: "Document", text: str) -> None:
+    p = doc.add_paragraph(str(text or "").strip())
+    for run in p.runs:
+        run.font.size = Pt(10) if Pt else None
+
+def _doc_add_table(doc: "Document", df: pd.DataFrame, title: str | None = None) -> None:
+    if title:
+        _doc_add_heading(doc, title, level=3)
+    if df is None or df.empty:
+        _doc_add_para(doc, "—")
+        return
+    t = doc.add_table(rows=1, cols=len(df.columns))
+    t.style = "Table Grid"
+    hdr = t.rows[0].cells
+    for j, c in enumerate(df.columns):
+        hdr[j].text = str(c)
+    for _, r in df.iterrows():
+        row = t.add_row().cells
+        for j, c in enumerate(df.columns):
+            row[j].text = "" if pd.isna(r[c]) else str(r[c])
+
+def _fmt_num(v, decimals=2):
+    try:
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            return "—"
+        return f"{float(v):,.{decimals}f}"
+    except Exception:
+        return "—"
+
+def _node_kpis(node: pd.Series, fy: int = 25) -> dict[str, float | None]:
+    rev = safe_num(node.get(f"segment_fy{fy:02d}_revenue_usd_bn"))
+    ebitda = safe_num(node.get(f"segment_fy{fy:02d}_ebitda_usd_bn"))
+    margin = safe_num(node.get(f"segment_fy{fy:02d}_ebitda_margin_pct"))
+    return {"rev": rev, "ebitda": ebitda, "margin": margin}
+
+def _growth_pct(a, b) -> float | None:
+    a = safe_num(a)
+    b = safe_num(b)
+    try:
+        if a is None or b is None:
+            return None
+        if isinstance(a, float) and math.isnan(a):
+            return None
+        if a == 0:
+            return None
+        return (float(b) / float(a) - 1.0) * 100.0
+    except Exception:
+        return None
+
+def build_node_report_docx(
+    node: pd.Series,
+    nodes: pd.DataFrame,
+    players_all: pd.DataFrame,
+    proxies_all: pd.DataFrame,
+    evidence_all: pd.DataFrame,
+    evidence_map_all: pd.DataFrame,
+) -> bytes:
+    """
+    v1 Node report: consultant-style, covers what's in the tabs.
+    Returns docx bytes.
+    """
+    if Document is None:
+        raise RuntimeError("python-docx is not installed in this environment.")
+
+    doc = Document()
+
+    node_name = str(node.get("display_name", "") or node.get("node_name", "") or "Node").strip()
+    node_path = str(node.get("path", "") or "").strip()
+    node_id = str(node.get("node_id", "") or "").strip()
+
+    # ----------------
+    # Cover / snapshot
+    # ----------------
+    _doc_add_heading(doc, f"{node_name}", level=1)
+    if node_path:
+        _doc_add_para(doc, f"Path: {node_path}")
+    if node_id:
+        _doc_add_para(doc, f"Node ID: {node_id}")
+
+    k25 = _node_kpis(node, 25)
+    k24 = _node_kpis(node, 24)
+    rev_g_22_25 = _growth_pct(node.get("segment_fy22_revenue_usd_bn"), node.get("segment_fy25_revenue_usd_bn"))
+    ebt_g_22_25 = _growth_pct(node.get("segment_fy22_ebitda_usd_bn"), node.get("segment_fy25_ebitda_usd_bn"))
+
+    _doc_add_heading(doc, "Snapshot (FY2025 default)", level=2)
+    _doc_add_bullets(
+        doc,
+        [
+            f"Revenue (USD bn): {_fmt_num(k25['rev'], 3)}",
+            f"EBITDA (USD bn): {_fmt_num(k25['ebitda'], 3)}",
+            f"EBITDA margin (%): {_fmt_num(k25['margin'], 1)}",
+            f"Revenue growth FY22–FY25 (%): {_fmt_num(rev_g_22_25, 1)}",
+            f"EBITDA growth FY22–FY25 (%): {_fmt_num(ebt_g_22_25, 1)}",
+            f"YoY revenue change FY24→FY25 (%): {_fmt_num(_growth_pct(k24['rev'], k25['rev']), 1)}",
+            f"YoY EBITDA change FY24→FY25 (%): {_fmt_num(_growth_pct(k24['ebitda'], k25['ebitda']), 1)}",
+        ],
+    )
+
+    # ----------------
+    # Overview content
+    # ----------------
+    desc = str(node.get("node_description", "") or node.get("description", "") or "").strip()
+    scope = str(node.get("scope_context", "") or "").strip()
+    method = str(node.get("methodology_summary", "") or "").strip()
+
+    _doc_add_heading(doc, "Overview", level=2)
+    if desc:
+        _doc_add_heading(doc, "Node description", level=3)
+        _doc_add_para(doc, desc)
+    if scope:
+        _doc_add_heading(doc, "Scope", level=3)
+        _doc_add_para(doc, scope)
+    if method:
+        _doc_add_heading(doc, "Methodology", level=3)
+        _doc_add_para(doc, method)
+
+    # ----------------
+    # Node financials (FY22–FY25)
+    # ----------------
+    _doc_add_heading(doc, "Node financials", level=2)
+    fin = pd.DataFrame(
+        {
+            "Metric": ["Revenue (USD bn)", "EBITDA (USD bn)", "EBITDA margin (%)"],
+            "FY2022": [
+                safe_num(node.get("segment_fy22_revenue_usd_bn")),
+                safe_num(node.get("segment_fy22_ebitda_usd_bn")),
+                safe_num(node.get("segment_fy22_ebitda_margin_pct")),
+            ],
+            "FY2023": [
+                safe_num(node.get("segment_fy23_revenue_usd_bn")),
+                safe_num(node.get("segment_fy23_ebitda_usd_bn")),
+                safe_num(node.get("segment_fy23_ebitda_margin_pct")),
+            ],
+            "FY2024": [
+                safe_num(node.get("segment_fy24_revenue_usd_bn")),
+                safe_num(node.get("segment_fy24_ebitda_usd_bn")),
+                safe_num(node.get("segment_fy24_ebitda_margin_pct")),
+            ],
+            "FY2025": [
+                safe_num(node.get("segment_fy25_revenue_usd_bn")),
+                safe_num(node.get("segment_fy25_ebitda_usd_bn")),
+                safe_num(node.get("segment_fy25_ebitda_margin_pct")),
+            ],
+        }
+    )
+    # string formatting
+    fin_fmt = fin.copy()
+    for c in ["FY2022", "FY2023", "FY2024", "FY2025"]:
+        if "margin" in fin_fmt["Metric"].iloc[2].lower():
+            pass
+        fin_fmt.loc[fin_fmt["Metric"].str.contains("margin", case=False), c] = fin_fmt.loc[
+            fin_fmt["Metric"].str.contains("margin", case=False), c
+        ].apply(lambda x: _fmt_num(x, 1))
+        fin_fmt.loc[~fin_fmt["Metric"].str.contains("margin", case=False), c] = fin_fmt.loc[
+            ~fin_fmt["Metric"].str.contains("margin", case=False), c
+        ].apply(lambda x: _fmt_num(x, 3))
+    _doc_add_table(doc, fin_fmt, title="Financial summary")
+
+    fin_comment = str(node.get("financial_commentary", "") or "").strip()
+    if fin_comment:
+        _doc_add_heading(doc, "Commentary", level=3)
+        _doc_add_para(doc, fin_comment)
+
+    # ----------------
+    # Players & proxies (node filtered, FY25 snapshot)
+    # ----------------
+    _doc_add_heading(doc, "Players and proxies", level=2)
+    pid = node_id
+    if pid and "node_id" in players_all.columns:
+        pl = players_all[players_all["node_id"].astype(str) == pid].copy()
+    else:
+        pl = pd.DataFrame()
+
+    if not pl.empty:
+        cols = []
+        for c in ["player_name", "display_name", "player", "company"]:
+            if c in pl.columns:
+                cols.append(c)
+                break
+        # FY25 player metrics (if present)
+        for c in ["fy25_revenue_usd_bn", "fy25_ebitda_usd_bn", "fy25_ebitda_margin_pct"]:
+            if c in pl.columns:
+                cols.append(c)
+        # fallback if your player columns are prefixed differently
+        if len(cols) == 1:
+            # keep a reasonable view
+            cols = pl.columns[:8].tolist()
+
+        pl_view = pl[cols].head(15).copy()
+        if "fy25_revenue_usd_bn" in pl_view.columns:
+            pl_view["fy25_revenue_usd_bn"] = pl_view["fy25_revenue_usd_bn"].apply(lambda x: _fmt_num(x, 3))
+        if "fy25_ebitda_usd_bn" in pl_view.columns:
+            pl_view["fy25_ebitda_usd_bn"] = pl_view["fy25_ebitda_usd_bn"].apply(lambda x: _fmt_num(x, 3))
+        if "fy25_ebitda_margin_pct" in pl_view.columns:
+            pl_view["fy25_ebitda_margin_pct"] = pl_view["fy25_ebitda_margin_pct"].apply(lambda x: _fmt_num(x, 1))
+
+        _doc_add_table(doc, pl_view, title="Players (top rows)")
+
+        pl_comment = str(node.get("player_commentary", "") or "").strip()
+        if pl_comment:
+            _doc_add_heading(doc, "Commentary", level=3)
+            _doc_add_para(doc, pl_comment)
+    else:
+        _doc_add_para(doc, "No player rows found for this node (or Players sheet missing node_id).")
+
+    if pid and "node_id" in proxies_all.columns:
+        pr = proxies_all[proxies_all["node_id"].astype(str) == pid].copy()
+    else:
+        pr = pd.DataFrame()
+    if not pr.empty:
+        pr_view = pr.copy()
+        _doc_add_table(doc, pr_view.head(20), title="Proxies (top rows)")
+    else:
+        _doc_add_para(doc, "No proxy rows found for this node (or Proxies sheet missing node_id).")
+
+    # ----------------
+    # Evidence mapping (humanised)
+    # ----------------
+    _doc_add_heading(doc, "Evidence and audit trail", level=2)
+    ev = pd.DataFrame()
+    if isinstance(evidence_all, pd.DataFrame) and not evidence_all.empty and "node_id" in evidence_all.columns:
+        ev = evidence_all[evidence_all["node_id"].astype(str) == pid].copy()
+
+    if not ev.empty:
+        # Choose a sane set of columns if present
+        keep = []
+        for c in ["evidence_id", "source_name", "source_title", "publisher", "url", "date", "snippet", "excerpt"]:
+            if c in ev.columns:
+                keep.append(c)
+        if not keep:
+            keep = ev.columns[:8].tolist()
+        _doc_add_table(doc, ev[keep].head(25), title="Evidence (top rows)")
+    else:
+        _doc_add_para(doc, "No evidence rows found for this node.")
+
+    em = pd.DataFrame()
+    if isinstance(evidence_map_all, pd.DataFrame) and not evidence_map_all.empty:
+        if "node_id" in evidence_map_all.columns:
+            em = evidence_map_all[evidence_map_all["node_id"].astype(str) == pid].copy()
+        else:
+            # some versions store node reference in 'entity_id' / 'target_id'
+            for alt in ["entity_id", "target_id", "ref_id"]:
+                if alt in evidence_map_all.columns:
+                    em = evidence_map_all[evidence_map_all[alt].astype(str) == pid].copy()
+                    break
+
+    if not em.empty:
+        # Humanise support fields if present
+        for col in ["field", "supports", "supported_field", "supported"]:
+            if col in em.columns:
+                em["Supports (human)"] = em[col].apply(lambda x: humanise_support_field(str(x)) if str(x).strip() else "")
+                break
+        keep = []
+        for c in ["evidence_id", "Supports (human)", "field", "supports", "confidence", "note"]:
+            if c in em.columns and c not in keep:
+                keep.append(c)
+        if not keep:
+            keep = em.columns[:8].tolist()
+        _doc_add_table(doc, em[keep].head(40), title="Evidence mapping (top rows)")
+    else:
+        _doc_add_para(doc, "No evidence mapping rows found for this node.")
+
+    # Return bytes
+    bio = io.BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
 
 def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
     """
@@ -1208,6 +1492,39 @@ def main() -> None:
             render_node_header(node)
             kpis()
 
+            # ----------------------------
+            # Node Word report (v1)
+            # ----------------------------
+            r1, r2 = st.columns([1.0, 2.0], gap="large")
+            with r1:
+                if st.button("Generate Word report (.docx)", type="primary", use_container_width=True):
+                    if Document is None:
+                        st.error("python-docx is not installed. Add it to requirements.txt as `python-docx`.")
+                    else:
+                        try:
+                            docx_bytes = build_node_report_docx(
+                                node=node,
+                                nodes=nodes,
+                                players_all=players_all,
+                                proxies_all=proxies_all,
+                                evidence_all=evidence_all,
+                                evidence_map_all=evidence_map_all,
+                            )
+                            st.session_state["node_report_docx"] = docx_bytes
+                        except Exception as e:
+                            st.error(f"Report generation failed: {e}")
+            with r2:
+                b = st.session_state.get("node_report_docx")
+                if isinstance(b, (bytes, bytearray)) and b:
+                    safe_name = str(node.get("display_name", "node")).strip().replace(" ", "_")
+                    st.download_button(
+                        "Download report",
+                        data=b,
+                        file_name=f"{safe_name}_report.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True,
+                    )
+
             # Overview content (no scroll boxes)
             # NOTE: financial_commentary moved to Tab 2 in the next step
             desc = str(node.get("node_description", "") or node.get("description", "") or "").strip()
@@ -1242,50 +1559,50 @@ def main() -> None:
             fig = make_subplots(specs=[[{"secondary_y": True}]])
 
             fig.add_trace(
-            go.Bar(
-                name="Revenue (USD bn)",
-                x=x,
-                y=rev,
-                offsetgroup="rev",
-                marker_color="#7CC7FF",
-            ),
-            secondary_y=False,
+                go.Bar(
+                    name="Revenue (USD bn)",
+                    x=x,
+                    y=rev,
+                    offsetgroup="rev",
+                    marker_color="#7CC7FF",
+                ),
+                secondary_y=False,
             )
 
             fig.add_trace(
-            go.Bar(
-                name="EBITDA (USD bn)",
-                x=x,
-                y=ebitda,
-                offsetgroup="ebitda",
-                marker_color="#2E7BEF",
-            ),
-            secondary_y=False,
+                go.Bar(
+                    name="EBITDA (USD bn)",
+                    x=x,
+                    y=ebitda,
+                    offsetgroup="ebitda",
+                    marker_color="#2E7BEF",
+                ),
+                secondary_y=False,
             )
 
             fig.add_trace(
-            go.Scatter(
-                name="EBITDA Margin (%)",
-                x=x,
-                y=margin,
-                mode="lines+markers",
-                line=dict(color="#FF6B6B", width=2),
-                marker=dict(color="#FF6B6B"),
-            ),
-            secondary_y=True,
+                go.Scatter(
+                    name="EBITDA Margin (%)",
+                    x=x,
+                    y=margin,
+                    mode="lines+markers",
+                    line=dict(color="#FF6B6B", width=2),
+                    marker=dict(color="#FF6B6B"),
+                ),
+                secondary_y=True,
             )
 
             fig.update_layout(
-            barmode="group",
-            title=dict(
-                text="Revenue, EBITDA and Margin",
-                x=0.0,
-                xanchor="left",
-                y=0.98,
-                yanchor="top",
-            ),
-            margin=dict(l=10, r=10, t=55, b=10),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                barmode="group",
+                title=dict(
+                    text="Revenue, EBITDA and Margin",
+                    x=0.0,
+                    xanchor="left",
+                    y=0.98,
+                    yanchor="top",
+                ),
+                margin=dict(l=10, r=10, t=55, b=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
             )
 
             fig.update_xaxes(title_text="Fiscal Year", showgrid=False)
@@ -1302,10 +1619,10 @@ def main() -> None:
             # Transposed layout: years as columns (matches left→right chart flow)
             year_cols = [f"FY{y}" for y in year_labels]  # FY2015 ... FY2025
             table_t = pd.DataFrame(
-            {
-                "Metric": ["Revenue (USD bn)", "EBITDA (USD bn)", "EBITDA Margin (%)"],
-                **{year_cols[i]: [rev[i], ebitda[i], margin[i]] for i in range(len(year_cols))},
-            }
+                {
+                    "Metric": ["Revenue (USD bn)", "EBITDA (USD bn)", "EBITDA Margin (%)"],
+                    **{year_cols[i]: [rev[i], ebitda[i], margin[i]] for i in range(len(year_cols))},
+                }
             )
 
             # Light formatting for readability
