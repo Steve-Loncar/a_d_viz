@@ -99,6 +99,15 @@ def _add_unique(existing: list[str], new_items: list[str]) -> list[str]:
 def _norm(s: str) -> str:
     return " ".join(str(s or "").strip().lower().split())
 
+def split_path_levels(path: str, max_levels: int = 6) -> list[str]:
+    """
+    Split taxonomy path into hierarchy levels.
+    """
+    if not isinstance(path, str):
+        return []
+    parts = [p.strip() for p in path.split(">")]
+    return parts[:max_levels]
+
 def _first_present(df: pd.DataFrame, cols: list[str]) -> str | None:
     for c in cols:
         if c in df.columns:
@@ -656,6 +665,18 @@ def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
 
         # Lookup node rows by path
         lookup = nodes.set_index("path", drop=False)
+
+        # Filter to selected nodes
+        selected_nodes = nodes[nodes["path"].isin(selected_rows)].copy()
+
+        # Derive hierarchy levels from path (old-app behaviour)
+        max_depth = 4
+        for i in range(max_depth):
+            selected_nodes[f"Level {i+1}"] = selected_nodes["path"].apply(
+                lambda p: split_path_levels(p, max_depth)[i]
+                if len(split_path_levels(p, max_depth)) > i
+                else None
+            )
 
         y_labels = selected_rows
         x_labels = selected_metrics
