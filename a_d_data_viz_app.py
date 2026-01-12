@@ -492,9 +492,6 @@ def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
         return
 
     hier_cols = _hier_cols_present(nodes)
-    if not hier_cols:
-        st.warning("No hierarchy columns found for tree selection (expected 'Hierarchy - Level x').")
-        return
 
     # Only show rows that actually have a path
     nodes = nodes.copy()
