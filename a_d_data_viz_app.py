@@ -7,12 +7,14 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
+DOCX_IMPORT_ERROR = None
 try:
     from docx import Document
     from docx.shared import Pt
-except Exception:
+except Exception as e:
     Document = None  # handled at runtime
     Pt = None
+    DOCX_IMPORT_ERROR = repr(e)
 
 # Muted red → amber → green (dark-mode friendly)
 MUTED_RAG = [
@@ -1499,7 +1501,10 @@ def main() -> None:
             with r1:
                 if st.button("Generate Word report (.docx)", type="primary", use_container_width=True):
                     if Document is None:
-                        st.error("python-docx is not installed. Add it to requirements.txt as `python-docx`.")
+                        st.error(
+                            "python-docx import failed. Add `python-docx` to requirements.txt.\n"
+                            f"Details: {DOCX_IMPORT_ERROR}"
+                        )
                     else:
                         try:
                             docx_bytes = build_node_report_docx(
@@ -1958,13 +1963,11 @@ def main() -> None:
             ["Taxonomy architecture", "Custom heatmaps", "Total heatmap"]
         )
         with tax_tab1:
-            st.caption("Taxonomy architecture (already built to match v1).")
-            st.info("Taxonomy architecture rendering is wired elsewhere in your file.")
+            render_taxonomy_architecture(nodes)
         with tax_tab2:
             render_custom_heatmaps(nodes)
         with tax_tab3:
-            st.caption("Total heatmap (already built).")
-            st.info("Total heatmap rendering is wired elsewhere in your file.")
+            render_total_heatmap(nodes)
 
 
 if __name__ == "__main__":
