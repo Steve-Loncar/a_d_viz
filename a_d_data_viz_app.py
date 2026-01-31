@@ -565,122 +565,39 @@ def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
         )
 
         st.markdown("#### Rows (taxonomy nodes)")
-        # Persist selection in session state
+
+        # Persist selection in session state (list of full 'path' strings)
         if "custom_hm_rows" not in st.session_state:
             st.session_state.custom_hm_rows = []
 
-        # --- Tree selector (cascading drill-down) ---
-        with st.expander("Tree selector", expanded=True):
-            # Level 1
-            lvl1_vals = sorted(nodes[hier_cols[0]].dropna().astype(str).unique().tolist())
-            lvl1 = st.selectbox("Level 1", options=["(all)"] + lvl1_vals, index=0)
-
+        # Simple v1-style behaviour:
+        # - use Level 1–3 dropdowns only to FILTER the list of paths
+        # - pick actual nodes via a single multiselect over full paths
+        with st.expander("Filter & pick nodes", expanded=True):
             scope = nodes
-            if lvl1 != "(all)":
-                scope = scope[scope[hier_cols[0]].astype(str) == lvl1]
+            # Level 1–3 filters (optional)
+            for i, label in enumerate(["Level 1", "Level 2", "Level 3"]):
+                if i >= len(hier_cols):
+                    break
+                col = hier_cols[i]
+                vals = sorted(scope[col].dropna().astype(str).unique().tolist())
+                choice = st.selectbox(label, options=["(all)"] + vals, index=0, key=f"hm_lvl{i+1}")
+                if choice != "(all)":
+                    scope = scope[scope[col].astype(str) == choice]
 
-            # Level 2
-            lvl2 = None
-            if len(hier_cols) >= 2:
-                lvl2_vals = sorted(scope[hier_cols[1]].dropna().astype(str).unique().tolist())
-                lvl2 = st.selectbox("Level 2", options=["(all)"] + lvl2_vals, index=0)
-                if lvl2 != "(all)":
-                    scope = scope[scope[hier_cols[1]].astype(str) == lvl2]
-
-            # Level 3
-            lvl3 = None
-            if len(hier_cols) >= 3:
-                lvl3_vals = sorted(scope[hier_cols[2]].dropna().astype(str).unique().tolist())
-                lvl3 = st.selectbox("Level 3", options=["(all)"] + lvl3_vals, index=0)
-                if lvl3 != "(all)":
-                    scope = scope[scope[hier_cols[2]].astype(str) == lvl3]
-
-            # Level 4 (node) + optional multi-leaf picker
-            leaf_col = hier_cols[min(3, len(hier_cols) - 1)]
-            leaf_vals = sorted(scope[leaf_col].dropna().astype(str).unique().tolist())
-
-            lvl4 = None
-            if len(hier_cols) >= 4:
-                lvl4 = st.selectbox("Level 4", options=["(all)"] + leaf_vals, index=0)
-                if lvl4 != "(all)":
-                    scope = scope[scope[leaf_col].astype(str) == lvl4]
-
-            leaf_pick = st.multiselect(
-                "Pick multiple nodes (optional)",
-                options=leaf_vals,
-                default=[],
-                help="Use this to add multiple Level 4 nodes at once. Use 'Add this node' to add the currently selected Level 1–4 node.",
+            # Available paths after filtering
+            filtered_paths = sorted(
+                p for p in scope["path"].dropna().astype(str).unique().tolist() if p.strip()
             )
 
-            # Determine the current selected node (deepest selected level)
-            current_parts = []
-            if lvl1 and lvl1 != "(all)":
-                current_parts.append(str(lvl1).strip())
-            if lvl2 and lvl2 != "(all)":
-                current_parts.append(str(lvl2).strip())
-            if lvl3 and lvl3 != "(all)":
-                current_parts.append(str(lvl3).strip())
-            if lvl4 and lvl4 != "(all)":
-                current_parts.append(str(lvl4).strip())
-
-            current_node_path = " > ".join([p for p in current_parts if p])
-            can_add_node = bool(current_node_path)
-
-            # Translate selection to full 'path' strings
-            to_add_paths = []
-            if leaf_pick:
-                # NOTE: leaf_pick uses the pre-scope leaf_vals list (Level 4 values)
-                # so we translate by filtering nodes at the current L1–L3 scope (not post-lvl4 scope)
-                tmp_scope = nodes
-                if lvl1 and lvl1 != "(all)":
-                    tmp_scope = tmp_scope[tmp_scope[hier_cols[0]].astype(str) == lvl1]
-                if lvl2 and lvl2 != "(all)":
-                    tmp_scope = tmp_scope[tmp_scope[hier_cols[1]].astype(str) == lvl2]
-                if lvl3 and lvl3 != "(all)":
-                    tmp_scope = tmp_scope[tmp_scope[hier_cols[2]].astype(str) == lvl3]
-                tmp = tmp_scope[tmp_scope[leaf_col].astype(str).isin([str(x) for x in leaf_pick])]
-                # Use existing 'path' column (preferred), fallback to build from hierarchy cols
-                if "path" in tmp.columns:
-                    to_add_paths = tmp["path"].dropna().astype(str).tolist()
-                else:
-                    to_add_paths = [ _node_path_from_levels(r, hier_cols) for _, r in tmp.iterrows() ]
-
-            # Actions: add THIS node / add selected (multi) / add all in branch / clear
-            a1, a2, a3, a4 = st.columns(4, gap="small")
-            with a1:
-                if st.button("Add this node", use_container_width=True, disabled=not can_add_node):
-                    st.session_state.custom_hm_rows = _add_unique(st.session_state.custom_hm_rows, [current_node_path])
-            with a2:
-                if st.button("Add selected", use_container_width=True, disabled=not bool(to_add_paths)):
-                    st.session_state.custom_hm_rows = _add_unique(st.session_state.custom_hm_rows, to_add_paths)
-            with a3:
-                if st.button("Add ALL in branch", use_container_width=True):
-                    branch_paths = scope["path"].dropna().astype(str).tolist()
-                    st.session_state.custom_hm_rows = _add_unique(st.session_state.custom_hm_rows, branch_paths)
-            with a4:
-                if st.button("Clear selection", use_container_width=True):
-                    st.session_state.custom_hm_rows = []
-
-        # Optional quick search (compact)
-        with st.expander("Quick search", expanded=False):
-            q = st.text_input("Search paths", value="", placeholder="Type to filter")
-            filtered = [p for p in paths if q.strip().lower() in p.lower()] if q.strip() else paths
-            max_show = st.slider("Results", min_value=25, max_value=300, value=80, step=25)
-            show = filtered[:max_show]
-            add = st.multiselect("Add by search", options=show, default=[])
-            if st.button("Add search picks", use_container_width=True, disabled=not bool(add)):
-                st.session_state.custom_hm_rows = _add_unique(st.session_state.custom_hm_rows, add)
+            st.session_state.custom_hm_rows = st.multiselect(
+                "Pick nodes for rows",
+                options=filtered_paths,
+                default=[p for p in st.session_state.custom_hm_rows if p in filtered_paths],
+            )
 
         selected_rows = st.session_state.custom_hm_rows
         st.caption(f"Selected rows: **{len(selected_rows)}**")
-
-        with st.expander("Review / edit selected rows", expanded=False):
-            st.session_state.custom_hm_rows = st.multiselect(
-                "Selected rows",
-                options=paths,
-                default=st.session_state.custom_hm_rows,
-            )
-            selected_rows = st.session_state.custom_hm_rows
 
         st.markdown("#### Colour scale")
         robust = st.checkbox("Robust scale (clip 5th–95th percentile)", value=True)
@@ -787,6 +704,11 @@ def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
                 bgcolor="rgba(15, 23, 42, 0.95)",
                 bordercolor="rgba(148, 163, 184, 0.35)",
                 font=dict(color="rgba(226, 232, 240, 1.0)", size=13),
+            ),
+            legend=dict(
+                bgcolor="rgba(15, 23, 42, 0.9)",
+                bordercolor="rgba(148, 163, 184, 0.35)",
+                font=dict(color="rgba(226, 232, 240, 1.0)"),
             ),
         )
         with viz:
@@ -1030,6 +952,11 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
                 color="rgba(226, 232, 240, 1.0)",  # light text
                 size=13,
             ),
+        ),
+        legend=dict(
+            bgcolor="rgba(15, 23, 42, 0.9)",
+            bordercolor="rgba(148, 163, 184, 0.35)",
+            font=dict(color="rgba(226, 232, 240, 1.0)"),
         ),
         height=min(1200, 26 * len(row_labels) + 200),
         margin=dict(l=10, r=10, t=40, b=10),
@@ -1664,7 +1591,21 @@ def main() -> None:
                     yanchor="top",
                 ),
                 margin=dict(l=10, r=10, t=55, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="left",
+                    x=0,
+                    bgcolor="rgba(15, 23, 42, 0.9)",
+                    bordercolor="rgba(148, 163, 184, 0.35)",
+                    font=dict(color="rgba(226, 232, 240, 1.0)"),
+                ),
+                hoverlabel=dict(
+                    bgcolor="rgba(15, 23, 42, 0.95)",
+                    bordercolor="rgba(148, 163, 184, 0.35)",
+                    font=dict(color="rgba(226, 232, 240, 1.0)", size=13),
+                ),
             )
 
             fig.update_xaxes(title_text="Fiscal Year", showgrid=False)
@@ -1851,7 +1792,21 @@ def main() -> None:
                         barmode="group",
                         title=dict(text=str(r.get("name", "")), x=0.0, xanchor="left"),
                         margin=dict(l=10, r=10, t=55, b=10),
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="left",
+                            x=0,
+                            bgcolor="rgba(15, 23, 42, 0.9)",
+                            bordercolor="rgba(148, 163, 184, 0.35)",
+                            font=dict(color="rgba(226, 232, 240, 1.0)"),
+                        ),
+                        hoverlabel=dict(
+                            bgcolor="rgba(15, 23, 42, 0.95)",
+                            bordercolor="rgba(148, 163, 184, 0.35)",
+                            font=dict(color="rgba(226, 232, 240, 1.0)", size=13),
+                        ),
                     )
                     fig.update_xaxes(title_text="Fiscal Year", showgrid=False)
                     fig.update_yaxes(title_text="USD bn", secondary_y=False, showgrid=False, zeroline=False)
