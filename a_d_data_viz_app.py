@@ -754,7 +754,7 @@ def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
             ),
         )
         with viz:
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, theme=None)
 
 def render_total_heatmap(nodes: pd.DataFrame) -> None:
     """
@@ -1008,7 +1008,7 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
         xaxis=dict(title="Hierarchy level"),
         yaxis=dict(title="Leaf path"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, theme=None)
 
     # Download as CSV (matrix with row label + columns)
     out = pd.DataFrame(z, columns=col_labels)
@@ -1662,7 +1662,7 @@ def main() -> None:
             fig.update_yaxes(title_text="USD bn", secondary_y=False, showgrid=False, zeroline=False)
             fig.update_yaxes(title_text="Margin (%)", secondary_y=True, showgrid=False, zeroline=False)
 
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, theme=None)
 
             # FY table underneath (all three metrics)
             st.markdown("### FY15–FY25 table")
@@ -1761,7 +1761,7 @@ def main() -> None:
                     )
                     fig1.update_layout(margin=dict(l=10, r=10, t=45, b=10))
                     fig1.update_yaxes(categoryorder="total ascending")
-                    st.plotly_chart(fig1, use_container_width=True)
+                    st.plotly_chart(fig1, use_container_width=True, theme=None)
 
                 with c2:
                     fig2 = px.bar(
@@ -1774,7 +1774,7 @@ def main() -> None:
                     )
                     fig2.update_layout(margin=dict(l=10, r=10, t=45, b=10))
                     fig2.update_yaxes(categoryorder="total ascending")
-                    st.plotly_chart(fig2, use_container_width=True)
+                    st.plotly_chart(fig2, use_container_width=True, theme=None)
 
                 with c3:
                     fig3 = px.bar(
@@ -1787,7 +1787,7 @@ def main() -> None:
                     )
                     fig3.update_layout(margin=dict(l=10, r=10, t=45, b=10))
                     fig3.update_yaxes(categoryorder="total ascending")
-                    st.plotly_chart(fig3, use_container_width=True)
+                    st.plotly_chart(fig3, use_container_width=True, theme=None)
 
                 st.caption("Charts show top 25 for readability; tables below include full rows for the node.")
 
@@ -1864,7 +1864,7 @@ def main() -> None:
                     fig.update_yaxes(title_text="Margin (%)", secondary_y=True, showgrid=False, zeroline=False)
 
                     with cols[i % 2]:
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, theme=None)
 
             # Proxies table (simple for now; we can add proxy charts next)
             st.markdown("### Proxies table")
