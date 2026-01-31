@@ -1758,8 +1758,16 @@ def main() -> None:
                         orientation="h",
                         title=f"Revenue (USD bn) — {fy_pick}",
                         hover_data=["country", "type"],
+                        color_discrete_sequence=["#7CC7FF"],
                     )
-                    fig1.update_layout(margin=dict(l=10, r=10, t=45, b=10))
+                    fig1.update_layout(
+                        margin=dict(l=10, r=10, t=45, b=10),
+                        paper_bgcolor="#0f172a",
+                        plot_bgcolor="#0f172a",
+                        font=dict(color="#e5e7eb"),
+                        legend=dict(bgcolor="#0f172a", font=dict(color="#e5e7eb")),
+                        hoverlabel=dict(bgcolor="#0f172a", font_color="#e5e7eb"),
+                    )
                     fig1.update_yaxes(categoryorder="total ascending")
                     st.plotly_chart(fig1, use_container_width=True, theme=None)
 
@@ -1771,8 +1779,16 @@ def main() -> None:
                         orientation="h",
                         title=f"EBITDA (USD bn) — {fy_pick}",
                         hover_data=["country", "type"],
+                        color_discrete_sequence=["#2E7BEF"],
                     )
-                    fig2.update_layout(margin=dict(l=10, r=10, t=45, b=10))
+                    fig2.update_layout(
+                        margin=dict(l=10, r=10, t=45, b=10),
+                        paper_bgcolor="#0f172a",
+                        plot_bgcolor="#0f172a",
+                        font=dict(color="#e5e7eb"),
+                        legend=dict(bgcolor="#0f172a", font=dict(color="#e5e7eb")),
+                        hoverlabel=dict(bgcolor="#0f172a", font_color="#e5e7eb"),
+                    )
                     fig2.update_yaxes(categoryorder="total ascending")
                     st.plotly_chart(fig2, use_container_width=True, theme=None)
 
@@ -1784,8 +1800,16 @@ def main() -> None:
                         orientation="h",
                         title=f"EBITDA Margin (%) — {fy_pick}",
                         hover_data=["country", "type"],
+                        color_discrete_sequence=["#10B981"],
                     )
-                    fig3.update_layout(margin=dict(l=10, r=10, t=45, b=10))
+                    fig3.update_layout(
+                        margin=dict(l=10, r=10, t=45, b=10),
+                        paper_bgcolor="#0f172a",
+                        plot_bgcolor="#0f172a",
+                        font=dict(color="#e5e7eb"),
+                        legend=dict(bgcolor="#0f172a", font=dict(color="#e5e7eb")),
+                        hoverlabel=dict(bgcolor="#0f172a", font_color="#e5e7eb"),
+                    )
                     fig3.update_yaxes(categoryorder="total ascending")
                     st.plotly_chart(fig3, use_container_width=True, theme=None)
 
