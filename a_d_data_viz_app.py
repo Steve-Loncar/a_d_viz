@@ -1740,16 +1740,14 @@ def main() -> None:
                 p[ebitda_col] = p[ebitda_col].map(safe_num)
                 p[mgn_col] = p[mgn_col].map(safe_num)
 
-                # Prefer rank ordering if present; otherwise revenue desc
-                if "rank" in p.columns and p["rank"].notna().any():
-                    p = p.sort_values("rank", ascending=True)
-                else:
-                    p = p.sort_values(rev_col, ascending=False)
+                # Always sort by revenue descending for the selected fiscal year
+                p = p.sort_values(rev_col, ascending=False)
 
                 # Limit to keep charts readable (still "all players", but practical)
                 p_chart = p.head(25).copy()
                 # Sort once by revenue and keep this order for all three charts
-                name_order = p_chart["name"].tolist()
+                # Reverse the order so largest revenue appears at TOP of horizontal bar chart
+                name_order = p_chart["name"].tolist()[::-1]
 
                 c1, c2, c3 = st.columns(3)
                 with c1:
