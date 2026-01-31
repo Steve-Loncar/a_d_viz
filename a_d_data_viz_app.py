@@ -739,6 +739,9 @@ def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
             height=min(1200, 24 * len(y_labels) + 260),
             margin=dict(l=10, r=10, t=60, b=10),
             title="Custom heatmap (selected rows × selected metrics)",
+            paper_bgcolor="#0f172a",
+            plot_bgcolor="#0f172a",
+            font=dict(color="#e5e7eb"),
             hoverlabel=dict(
                 bgcolor="rgba(15, 23, 42, 0.95)",
                 bordercolor="rgba(148, 163, 184, 0.35)",
@@ -984,6 +987,9 @@ def render_total_heatmap(nodes: pd.DataFrame) -> None:
         )
     )
     fig.update_layout(
+        paper_bgcolor="#0f172a",
+        plot_bgcolor="#0f172a",
+        font=dict(color="#e5e7eb"),
         hoverlabel=dict(
             bgcolor="rgba(15, 23, 42, 0.95)",  # dark slate, slightly transparent
             bordercolor="rgba(148, 163, 184, 0.35)",
@@ -1622,6 +1628,9 @@ def main() -> None:
 
             fig.update_layout(
                 barmode="group",
+                paper_bgcolor="#0f172a",
+                plot_bgcolor="#0f172a",
+                font=dict(color="#e5e7eb"),
                 title=dict(
                     text="Revenue, EBITDA and Margin",
                     x=0.0,
@@ -1829,6 +1838,9 @@ def main() -> None:
                     fig.add_trace(go.Scatter(name="Margin (%)", x=years, y=mgn, mode="lines+markers"), secondary_y=True)
                     fig.update_layout(
                         barmode="group",
+                        paper_bgcolor="#0f172a",
+                        plot_bgcolor="#0f172a",
+                        font=dict(color="#e5e7eb"),
                         title=dict(text=str(r.get("name", "")), x=0.0, xanchor="left"),
                         margin=dict(l=10, r=10, t=55, b=10),
                         legend=dict(
