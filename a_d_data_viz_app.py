@@ -44,7 +44,7 @@ from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_prox
 
 st.set_page_config(page_title="A&D Market Explorer (v2)", layout="wide")
 
-# Force Streamlit text inputs to respect the dark theme (no white hover box).
+# AGGRESSIVE dark theme override for Streamlit + Plotly
 st.markdown(
     """
     <style>
@@ -72,10 +72,49 @@ st.markdown(
     .stTextArea > div > textarea::placeholder {
         color: #6b7280 !important;
     }
+
+    /* NUCLEAR OPTION: Force all Plotly elements dark */
+    .js-plotly-plot .plotly,
+    .js-plotly-plot .plotly .svg-container,
+    .modebar,
+    .modebar-container {
+        background-color: transparent !important;
+    }
+
+    /* Plotly range slider (the white box at top of chart) */
+    .rangeslider-container,
+    .rangeslider-mask-min,
+    .rangeslider-mask-max,
+    .range-slider,
+    .slider,
+    .slider-bg {
+        background-color: #0f172a !important;
+        fill: #0f172a !important;
+    }
+
+    /* Plotly legend boxes */
+    .legend,
+    .scrollbox {
+        background-color: rgba(15, 23, 42, 0.9) !important;
+        border: 1px solid rgba(148, 163, 184, 0.35) !important;
+    }
+
+    /* Any remaining white backgrounds in Plotly */
+    .plotly .bg,
+    .plotly .gridlayer,
+    rect[fill="#ffffff"],
+    rect[fill="rgb(255,255,255)"],
+    rect[fill="white"] {
+        fill: #0f172a !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+# Set global Plotly template to dark
+import plotly.io as pio
+pio.templates.default = "plotly_dark"
 
 def _safe_float(v):
     try:
