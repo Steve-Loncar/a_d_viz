@@ -1748,6 +1748,8 @@ def main() -> None:
 
                 # Limit to keep charts readable (still "all players", but practical)
                 p_chart = p.head(25).copy()
+                # Sort once by revenue and keep this order for all three charts
+                name_order = p_chart["name"].tolist()
 
                 c1, c2, c3 = st.columns(3)
                 with c1:
@@ -1768,7 +1770,7 @@ def main() -> None:
                         legend=dict(bgcolor="#0f172a", font=dict(color="#e5e7eb")),
                         hoverlabel=dict(bgcolor="#0f172a", font_color="#e5e7eb"),
                     )
-                    fig1.update_yaxes(categoryorder="total ascending")
+                    fig1.update_yaxes(categoryorder="array", categoryarray=name_order)
                     st.plotly_chart(fig1, use_container_width=True, theme=None)
 
                 with c2:
@@ -1789,7 +1791,7 @@ def main() -> None:
                         legend=dict(bgcolor="#0f172a", font=dict(color="#e5e7eb")),
                         hoverlabel=dict(bgcolor="#0f172a", font_color="#e5e7eb"),
                     )
-                    fig2.update_yaxes(categoryorder="total ascending")
+                    fig2.update_yaxes(categoryorder="array", categoryarray=name_order)
                     st.plotly_chart(fig2, use_container_width=True, theme=None)
 
                 with c3:
@@ -1810,7 +1812,7 @@ def main() -> None:
                         legend=dict(bgcolor="#0f172a", font=dict(color="#e5e7eb")),
                         hoverlabel=dict(bgcolor="#0f172a", font_color="#e5e7eb"),
                     )
-                    fig3.update_yaxes(categoryorder="total ascending")
+                    fig3.update_yaxes(categoryorder="array", categoryarray=name_order)
                     st.plotly_chart(fig3, use_container_width=True, theme=None)
 
                 st.caption("Charts show top 25 for readability; tables below include full rows for the node.")
