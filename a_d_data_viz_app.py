@@ -533,9 +533,12 @@ def render_custom_heatmaps(nodes: pd.DataFrame) -> None:
         st.warning("Nodes sheet missing required column: 'path'")
         return
 
-    hier_cols = _hier_cols_present(nodes)
+    # Derive hierarchy columns from `path` so we don't depend on explicit
+    # 'Hierarchy - Level x' columns in the workbook.
+    nodes, hier_cols = _with_path_hierarchy_from_df(nodes)
+
     if not hier_cols:
-        st.warning("No hierarchy columns found for tree selection (expected 'Hierarchy - Level x').")
+        st.warning("No hierarchy could be derived from 'path' for tree selection.")
         return
 
     # Only show rows that actually have a path
