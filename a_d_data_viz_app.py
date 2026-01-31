@@ -44,6 +44,39 @@ from lib.transforms import derive_hierarchy, safe_num, clean_players, clean_prox
 
 st.set_page_config(page_title="A&D Market Explorer (v2)", layout="wide")
 
+# Force Streamlit text inputs to respect the dark theme (no white hover box).
+st.markdown(
+    """
+    <style>
+    /* Text inputs & text areas – dark background always */
+    .stTextInput > div > input,
+    .stTextArea > div > textarea {
+        background-color: #020617 !important;  /* near-black */
+        color: #e5e7eb !important;            /* light gray text */
+        border: 1px solid #1f2937 !important; /* subtle border */
+    }
+
+    /* Hover + focus: keep dark, just lighten border */
+    .stTextInput > div > input:hover,
+    .stTextInput > div > input:focus,
+    .stTextArea > div > textarea:hover,
+    .stTextArea > div > textarea:focus {
+        background-color: #020617 !important;
+        color: #f9fafb !important;
+        border-color: #4b5563 !important;     /* slightly brighter outline */
+        box-shadow: none !important;          /* remove default glow */
+    }
+
+    /* Placeholder text: lighter but still readable on dark */
+    .stTextInput > div > input::placeholder,
+    .stTextArea > div > textarea::placeholder {
+        color: #6b7280 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 def _safe_float(v):
     try:
         if v is None:
