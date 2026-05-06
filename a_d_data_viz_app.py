@@ -1687,7 +1687,7 @@ def main() -> None:
             table_fmt = table_t.copy()
             
             for y in year_cols:
-            table_fmt[y] = [
+                table_fmt[y] = [
                     _fmt_fy_cell(metric, value)
                     for metric, value in zip(table_t["Metric"], table_t[y])
                 ]
