@@ -437,7 +437,8 @@ def build_node_report_docx(
     )
     # string formatting
     fin_fmt = fin.copy()
-        for c in ["FY2022", "FY2023", "FY2024", "FY2025"]:  
+    
+    for c in ["FY2022", "FY2023", "FY2024", "FY2025"]:  
         fin_fmt[c] = [
             _fmt_num(value, 1 if "margin" in str(metric).lower() else 3)
             for metric, value in zip(fin["Metric"], fin[c])
@@ -1685,7 +1686,7 @@ def main() -> None:
 
             table_fmt = table_t.copy()
             
-            for i, y in enumerate(year_cols):
+            for y in year_cols:
             table_fmt[y] = [
                     _fmt_fy_cell(metric, value)
                     for metric, value in zip(table_t["Metric"], table_t[y])
