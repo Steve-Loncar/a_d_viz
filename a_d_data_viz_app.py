@@ -437,15 +437,11 @@ def build_node_report_docx(
     )
     # string formatting
     fin_fmt = fin.copy()
-    for c in ["FY2022", "FY2023", "FY2024", "FY2025"]:
-        if "margin" in fin_fmt["Metric"].iloc[2].lower():
-            pass
-        fin_fmt.loc[fin_fmt["Metric"].str.contains("margin", case=False), c] = fin_fmt.loc[
-            fin_fmt["Metric"].str.contains("margin", case=False), c
-        ].apply(lambda x: _fmt_num(x, 1))
-        fin_fmt.loc[~fin_fmt["Metric"].str.contains("margin", case=False), c] = fin_fmt.loc[
-            ~fin_fmt["Metric"].str.contains("margin", case=False), c
-        ].apply(lambda x: _fmt_num(x, 3))
+        fin_fmt[c] = [
+            _fmt_num(value, 1 if "margin" in str(metric).lower() else 3)
+            for metric, value in zip(fin["Metric"], fin[c])
+        ]
+
     _doc_add_table(doc, fin_fmt, title="Financial summary")
 
     fin_comment = str(node.get("financial_commentary", "") or "").strip()
@@ -1677,26 +1673,22 @@ def main() -> None:
             )
 
             # Light formatting for readability
+            def _fmt_fy_cell(metric: str, value) -> str:
+                try:
+                    if pd.isna(value):
+                        return ""
+                    decimals = 1 if "Margin" in str(metric) else 3
+                    return f"{float(value):,.{decimals}f}"
+                except Exception:
+                    return ""
+
             table_fmt = table_t.copy()
+            
             for i, y in enumerate(year_cols):
-                try:
-                    table_fmt.loc[table_fmt["Metric"] == "Revenue (USD bn)", y] = (
-                        "" if pd.isna(table_t.loc[0, y]) else f"{float(table_t.loc[0, y]):,.3f}"
-                    )
-                except Exception:
-                    table_fmt.loc[table_fmt["Metric"] == "Revenue (USD bn)", y] = ""
-                try:
-                    table_fmt.loc[table_fmt["Metric"] == "EBITDA (USD bn)", y] = (
-                        "" if pd.isna(table_t.loc[1, y]) else f"{float(table_t.loc[1, y]):,.3f}"
-                    )
-                except Exception:
-                    table_fmt.loc[table_fmt["Metric"] == "EBITDA (USD bn)", y] = ""
-                try:
-                    table_fmt.loc[table_fmt["Metric"] == "EBITDA Margin (%)", y] = (
-                        "" if pd.isna(table_t.loc[2, y]) else f"{float(table_t.loc[2, y]):,.1f}"
-                    )
-                except Exception:
-                    table_fmt.loc[table_fmt["Metric"] == "EBITDA Margin (%)", y] = ""
+            table_fmt[y] = [
+                    _fmt_fy_cell(metric, value)
+                    for metric, value in zip(table_t["Metric"], table_t[y])
+                ]
 
             st.dataframe(table_fmt, use_container_width=True, hide_index=True)
 
